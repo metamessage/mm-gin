@@ -2,6 +2,8 @@
 
 Gin 框架的 MetaMessage 插件，提供編解碼、數據綁定等功能。
 
+**[中文](README.md)** | [English](README.en.md) | [日本語](README.ja.md)
+
 ## 特性
 
 - **請求解碼**：自動檢測並解碼 JSONC 和 MetaMessage 二進制格式的請求體
@@ -286,3 +288,7 @@ curl http://localhost:8080/api/v1/users/1
 ## License
 
 MIT
+
+---
+
+**[中文](README.md)** | [English](README.en.md) | [日本語](README.ja.md)
