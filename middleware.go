@@ -2,6 +2,7 @@ package ginmm
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -60,9 +61,19 @@ func DefaultDecodeConfig() *DecodeConfig {
 func DefaultEncodeConfig() *EncodeConfig {
 	return &EncodeConfig{
 		DefaultFormat: FormatMetaMessage,
-		AutoNegotiate: true,
+		AutoNegotiate: false,
 		SuccessCode:   http.StatusOK,
 	}
+}
+
+// mmError 用於 MetaMessage 格式的錯誤響應
+type mmError struct {
+	Error string `mm:"desc=錯誤信息"`
+}
+
+type MMResp struct {
+	Data any
+	Tag  string
 }
 
 // MetaMessageDecoder 請求體解碼中間件
@@ -76,7 +87,8 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 		// 只處理有請求體的方法
 		if c.Request.Method == http.MethodGet ||
 			c.Request.Method == http.MethodHead ||
-			c.Request.Method == http.MethodDelete {
+			c.Request.Method == http.MethodDelete ||
+			c.Request.Method == http.MethodOptions {
 			c.Next()
 			return
 		}
@@ -92,8 +104,8 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 		if config.MaxBodySize > 0 {
 			body, err = io.ReadAll(io.LimitReader(c.Request.Body, config.MaxBodySize+1))
 			if int64(len(body)) > config.MaxBodySize {
-				c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
-					"error": "request body too large",
+				AbortWithMetaMessage(c, http.StatusRequestEntityTooLarge, mmError{
+					Error: "request body too large",
 				})
 				return
 			}
@@ -102,8 +114,8 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 		}
 
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"error": "failed to read request body: " + err.Error(),
+			AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+				Error: "failed to read request body",
 			})
 			return
 		}
@@ -121,7 +133,7 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 
 // Bind 將請求體綁定到目標結構體
 // 在 handler 中使用：var req MyRequest; if err := ginmm.Bind(c, &req); err != nil { ... }
-func Bind(c *gin.Context, obj interface{}) error {
+func Bind(c *gin.Context, obj any) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
 		// 如果沒有經過解碼中間件，直接讀取請求體
@@ -144,18 +156,18 @@ func Bind(c *gin.Context, obj interface{}) error {
 		return mm.DecodeToValue(data, obj)
 	case FormatJSONC:
 		jsoncStr := string(data)
-		return mm.JSONCToValue(jsoncStr, obj)
+		return mm.JsoncToValue(jsoncStr, obj)
 	default:
 		// 自動檢測格式
 		if len(data) > 0 && isBinaryMetaMessage(data) {
 			return mm.DecodeToValue(data, obj)
 		}
-		return mm.JSONCToValue(string(data), obj)
+		return mm.JsoncToValue(string(data), obj)
 	}
 }
 
 // BindWithTag 使用指定的 tag 將請求體綁定到目標結構體
-func BindWithTag(c *gin.Context, obj interface{}, tag string) error {
+func BindWithTag(c *gin.Context, obj any, tag string) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
 		data, err := io.ReadAll(c.Request.Body)
@@ -176,17 +188,17 @@ func BindWithTag(c *gin.Context, obj interface{}, tag string) error {
 		return mm.DecodeToValue(data, obj)
 	case FormatJSONC:
 		jsoncStr := string(data)
-		return mm.JSONCToValue(jsoncStr, obj)
+		return mm.JsoncToValue(jsoncStr, obj)
 	default:
 		if len(data) > 0 && isBinaryMetaMessage(data) {
 			return mm.DecodeToValue(data, obj)
 		}
-		return mm.JSONCToValue(string(data), obj)
+		return mm.JsoncToValue(string(data), obj)
 	}
 }
 
 // MetaMessageEncoder 響應編碼中間件
-// 將 handler 設置的響應數據編碼為 MetaMessage 或 JSONC 格式
+// 將 handler 設置的響應數據編碼為 MetaMessage 二進制格式
 func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 	if config == nil {
 		config = DefaultEncodeConfig()
@@ -206,50 +218,63 @@ func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 			return
 		}
 
-		// 確定響應格式
-		format := config.DefaultFormat
-		if config.AutoNegotiate {
-			format = negotiateFormat(c, format)
-		}
-
-		// 編碼響應
-		var encoded []byte
-		var contentType string
-		var err error
-
-		switch format {
-		case FormatMetaMessage:
-			encoded, err = mm.EncodeFromValue(data, "")
-			contentType = ContentTypeMetaMessage
-		case FormatJSONC:
-			encoded, err = mm.ValueToJSONC(data, "")
-			contentType = ContentTypeJSONC
-		default:
-			// 默認使用 MetaMessage
-			encoded, err = mm.EncodeFromValue(data, "")
-			contentType = ContentTypeMetaMessage
-		}
-
+		// 始終編碼為 MetaMessage 二進制格式
+		mmResp := data.(MMResp)
+		encoded, err := mm.EncodeFromValue(mmResp.Data, mmResp.Tag)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error": "failed to encode response: " + err.Error(),
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode response: %s", err.Error()),
 			})
 			return
 		}
 
-		c.Data(config.SuccessCode, contentType, []byte(encoded))
+		c.Data(config.SuccessCode, ContentTypeMetaMessage, encoded)
 	}
 }
 
 // Respond 設置響應數據（供 handler 使用）
-func Respond(c *gin.Context, data interface{}) {
-	c.Set("mm_response", data)
+func Respond(c *gin.Context, data any, tag string) {
+	c.Set("mm_response", MMResp{Data: data, Tag: tag})
 }
 
 // RespondWithStatus 設置響應數據和狀態碼
-func RespondWithStatus(c *gin.Context, code int, data interface{}) {
-	c.Set("mm_response", data)
+func RespondWithStatus(c *gin.Context, code int, data any, tag string) {
+	c.Set("mm_response", MMResp{Data: data, Tag: tag})
 	c.Status(code)
+}
+
+// AbortWithMetaMessage 返回 MetaMessage 格式的錯誤響應並中止請求
+// 所有錯誤都使用 MetaMessage 格式，保證響應格式一致
+// 即使編碼出錯也返回 MetaMessage 格式
+func AbortWithMetaMessage(c *gin.Context, code int, obj any) {
+	encoded, err := mm.EncodeFromValue(obj, "")
+	if err != nil {
+		// 編碼出錯時使用最簡結構重試
+		fallback := struct {
+			Error string `mm:"desc=錯誤信息"`
+		}{Error: "internal server error"}
+		encoded, _ = mm.EncodeFromValue(fallback, "")
+	}
+	c.Status(code)
+	c.Header("Content-Type", ContentTypeMetaMessage)
+	_, _ = c.Writer.Write(encoded)
+	c.Abort()
+}
+
+// OptionsHandler 返回 OPTIONS 請求的處理函數
+// 用於 Schema 發現：客戶端發送 OPTIONS 請求即可獲取請求體的結構信息
+// 返回值是一個 MetaMessage 編碼的結構體實例，包含完整的類型、約束和描述
+func OptionsHandler(obj any) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		encoded, err := mm.EncodeFromValue(obj, "")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: "failed to encode schema",
+			})
+			return
+		}
+		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+	}
 }
 
 // detectFormat 根據 Content-Type 檢測數據格式
@@ -267,28 +292,8 @@ func detectFormat(contentType string, defaultFormat FormatType) FormatType {
 	}
 }
 
-// negotiateFormat 根據 Accept 頭協商響應格式
-func negotiateFormat(c *gin.Context, defaultFormat FormatType) FormatType {
-	accept := c.GetHeader("Accept")
-	if accept == "" {
-		return defaultFormat
-	}
-
-	// 簡單的協商邏輯
-	if contains(accept, ContentTypeMetaMessage) {
-		return FormatMetaMessage
-	}
-	if contains(accept, ContentTypeJSONC) || contains(accept, "application/json") {
-		return FormatJSONC
-	}
-
-	return defaultFormat
-}
-
 // isBinaryMetaMessage 檢測數據是否為 MetaMessage 二進制格式
 func isBinaryMetaMessage(data []byte) bool {
-	// MetaMessage 二進制格式有特定的魔數或結構
-	// 這裡使用簡單的啟發式檢測
 	if len(data) < 2 {
 		return false
 	}
@@ -296,18 +301,4 @@ func isBinaryMetaMessage(data []byte) bool {
 	// JSON 通常以 { 或 [ 開頭
 	firstChar := data[0]
 	return firstChar != '{' && firstChar != '[' && firstChar != '"'
-}
-
-// contains 檢查字符串是否包含子串
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

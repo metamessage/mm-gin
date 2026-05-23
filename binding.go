@@ -2,6 +2,7 @@ package ginmm
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -31,16 +32,15 @@ func (v ValidationErrors) Error() string {
 }
 
 // ShouldBind 嘗試綁定請求數據到結構體，失敗返回錯誤
-func ShouldBind(c *gin.Context, obj interface{}) error {
+func ShouldBind(c *gin.Context, obj any) error {
 	return Bind(c, obj)
 }
 
 // MustBind 綁定請求數據，失敗時自動返回 400 錯誤響應
-func MustBind(c *gin.Context, obj interface{}) error {
+func MustBind(c *gin.Context, obj any) error {
 	if err := Bind(c, obj); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error":   "binding failed",
-			"message": err.Error(),
+		AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+			Error: "binding failed: " + err.Error(),
 		})
 		return err
 	}
@@ -48,16 +48,15 @@ func MustBind(c *gin.Context, obj interface{}) error {
 }
 
 // ShouldBindWithTag 使用指定 tag 嘗試綁定
-func ShouldBindWithTag(c *gin.Context, obj interface{}, tag string) error {
+func ShouldBindWithTag(c *gin.Context, obj any, tag string) error {
 	return BindWithTag(c, obj, tag)
 }
 
 // MustBindWithTag 使用指定 tag 綁定，失敗時自動返回錯誤
-func MustBindWithTag(c *gin.Context, obj interface{}, tag string) error {
+func MustBindWithTag(c *gin.Context, obj any, tag string) error {
 	if err := BindWithTag(c, obj, tag); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error":   "binding failed",
-			"message": err.Error(),
+		AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+			Error: "binding failed: " + err.Error(),
 		})
 		return err
 	}
@@ -66,9 +65,9 @@ func MustBindWithTag(c *gin.Context, obj interface{}, tag string) error {
 
 // BindQuery 綁定查詢參數到結構體
 // 將查詢參數轉換為 JSONC 格式後使用 metamessage 解析
-func BindQuery(c *gin.Context, obj interface{}) error {
+func BindQuery(c *gin.Context, obj any) error {
 	// 將查詢參數轉換為 map
-	queryMap := make(map[string]interface{})
+	queryMap := make(map[string]any)
 	for key, values := range c.Request.URL.Query() {
 		if len(values) == 1 {
 			queryMap[key] = values[0]
@@ -87,8 +86,8 @@ func BindQuery(c *gin.Context, obj interface{}) error {
 }
 
 // BindHeader 綁定請求頭到結構體
-func BindHeader(c *gin.Context, obj interface{}) error {
-	headerMap := make(map[string]interface{})
+func BindHeader(c *gin.Context, obj any) error {
+	headerMap := make(map[string]any)
 	for key, values := range c.Request.Header {
 		if len(values) == 1 {
 			headerMap[key] = values[0]
@@ -106,10 +105,14 @@ func BindHeader(c *gin.Context, obj interface{}) error {
 }
 
 // BindUri 綁定 URI 參數到結構體
-func BindUri(c *gin.Context, obj interface{}) error {
-	uriMap := make(map[string]interface{})
-	for key, value := range c.Params {
-		uriMap[key] = value
+func BindUri(c *gin.Context, obj any) error {
+	uriMap := make(map[string]any)
+	for i, param := range c.Params {
+		uriMap[fmt.Sprintf("p%d", i)] = param.Value
+		// 同時用參數名作為 key
+		if param.Key != "" {
+			uriMap[param.Key] = param.Value
+		}
 	}
 
 	data, err := mm.EncodeFromValue(uriMap, "")
@@ -122,7 +125,7 @@ func BindUri(c *gin.Context, obj interface{}) error {
 
 // AutoBind 自動根據請求內容選擇綁定方式
 // 優先順序：URI 參數 > 查詢參數 > 請求體
-func AutoBind(c *gin.Context, obj interface{}) error {
+func AutoBind(c *gin.Context, obj any) error {
 	// 先綁定 URI 參數
 	if len(c.Params) > 0 {
 		if err := BindUri(c, obj); err != nil {
@@ -150,8 +153,8 @@ func AutoBind(c *gin.Context, obj interface{}) error {
 }
 
 // bindQueryToExisting 將查詢參數綁定到已存在的對象
-func bindQueryToExisting(c *gin.Context, obj interface{}) error {
-	queryMap := make(map[string]interface{})
+func bindQueryToExisting(c *gin.Context, obj any) error {
+	queryMap := make(map[string]any)
 	for key, values := range c.Request.URL.Query() {
 		if len(values) == 1 {
 			queryMap[key] = values[0]
@@ -164,7 +167,7 @@ func bindQueryToExisting(c *gin.Context, obj interface{}) error {
 }
 
 // bindBodyToExisting 將請求體綁定到已存在的對象
-func bindBodyToExisting(c *gin.Context, obj interface{}) error {
+func bindBodyToExisting(c *gin.Context, obj any) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
 		return nil
@@ -178,14 +181,14 @@ func bindBodyToExisting(c *gin.Context, obj interface{}) error {
 	formatVal, _ := c.Get("mm_format")
 	format, _ := formatVal.(FormatType)
 
-	var tempMap map[string]interface{}
+	var tempMap map[string]any
 	switch format {
 	case FormatMetaMessage:
 		if err := mm.DecodeToValue(data, &tempMap); err != nil {
 			return err
 		}
 	default:
-		if err := mm.JSONCToValue(string(data), &tempMap); err != nil {
+		if err := mm.JsoncToValue(string(data), &tempMap); err != nil {
 			return err
 		}
 	}
@@ -194,14 +197,14 @@ func bindBodyToExisting(c *gin.Context, obj interface{}) error {
 }
 
 // mergeIntoObject 將 map 合併到目標對象
-func mergeIntoObject(obj interface{}, data map[string]interface{}) error {
+func mergeIntoObject(obj any, data map[string]any) error {
 	// 創建一個臨時結構來存儲當前對象的數據
 	objData, err := mm.EncodeFromValue(obj, "")
 	if err != nil {
 		return err
 	}
 
-	var objMap map[string]interface{}
+	var objMap map[string]any
 	if err := mm.DecodeToValue(objData, &objMap); err != nil {
 		return err
 	}
@@ -227,7 +230,7 @@ type Validator interface {
 
 // Validate 執行自定義驗證
 // 如果對象實現了 Validator 接口，則調用其 Validate 方法
-func Validate(obj interface{}) error {
+func Validate(obj any) error {
 	if v, ok := obj.(Validator); ok {
 		return v.Validate()
 	}
@@ -235,7 +238,7 @@ func Validate(obj interface{}) error {
 }
 
 // BindAndValidate 綁定並驗證數據
-func BindAndValidate(c *gin.Context, obj interface{}) error {
+func BindAndValidate(c *gin.Context, obj any) error {
 	if err := Bind(c, obj); err != nil {
 		return err
 	}
@@ -243,19 +246,17 @@ func BindAndValidate(c *gin.Context, obj interface{}) error {
 }
 
 // MustBindAndValidate 綁定並驗證數據，失敗時自動返回錯誤響應
-func MustBindAndValidate(c *gin.Context, obj interface{}) error {
+func MustBindAndValidate(c *gin.Context, obj any) error {
 	if err := Bind(c, obj); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error":   "binding failed",
-			"message": err.Error(),
+		AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+			Error: "binding failed: " + err.Error(),
 		})
 		return err
 	}
 
 	if err := Validate(obj); err != nil {
-		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
-			"error":   "validation failed",
-			"message": err.Error(),
+		AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{
+			Error: "validation failed: " + err.Error(),
 		})
 		return err
 	}
@@ -264,7 +265,7 @@ func MustBindAndValidate(c *gin.Context, obj interface{}) error {
 }
 
 // GetMMTag 從結構體字段獲取 mm tag 信息
-func GetMMTag(obj interface{}, fieldName string) (string, error) {
+func GetMMTag(obj any, fieldName string) (string, error) {
 	val := reflect.ValueOf(obj)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
@@ -283,17 +284,17 @@ func GetMMTag(obj interface{}, fieldName string) (string, error) {
 }
 
 // SetMMResponse 設置 MetaMessage 響應（兼容 gin 的 JSON 方法風格）
-func SetMMResponse(c *gin.Context, code int, obj interface{}) {
+func SetMMResponse(c *gin.Context, code int, obj any) {
 	c.Set("mm_response", obj)
 	c.Status(code)
 }
 
 // JSONC 返回 JSONC 格式的響應
-func JSONC(c *gin.Context, code int, obj interface{}) {
-	jsoncStr, err := mm.ValueToJSONC(obj, "")
+func JSONC(c *gin.Context, code int, obj any) {
+	jsoncStr, err := mm.ValueToJsonc(obj, "")
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to encode response: " + err.Error(),
+		AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+			Error: "failed to encode response",
 		})
 		return
 	}
@@ -301,11 +302,11 @@ func JSONC(c *gin.Context, code int, obj interface{}) {
 }
 
 // MetaMessage 返回 MetaMessage 二進制格式的響應
-func MetaMessage(c *gin.Context, code int, obj interface{}) {
+func MetaMessage(c *gin.Context, code int, obj any) {
 	data, err := mm.EncodeFromValue(obj, "")
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to encode response: " + err.Error(),
+		AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+			Error: "failed to encode response",
 		})
 		return
 	}
