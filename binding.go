@@ -1,10 +1,8 @@
-package ginmm
+package mmgin
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,14 +11,14 @@ import (
 
 // BindingError 綁定錯誤
 type BindingError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-	Code    string `json:"code"`
+	Field   string
+	Message string
+	Code    string
 }
 
 // ValidationErrors 驗證錯誤集合
 type ValidationErrors struct {
-	Errors []BindingError `json:"errors"`
+	Errors []BindingError
 }
 
 func (v ValidationErrors) Error() string {
@@ -262,25 +260,6 @@ func MustBindAndValidate(c *gin.Context, obj any) error {
 	}
 
 	return nil
-}
-
-// GetMMTag 從結構體字段獲取 mm tag 信息
-func GetMMTag(obj any, fieldName string) (string, error) {
-	val := reflect.ValueOf(obj)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-
-	if val.Kind() != reflect.Struct {
-		return "", errors.New("obj must be a struct or pointer to struct")
-	}
-
-	field, found := val.Type().FieldByName(fieldName)
-	if !found {
-		return "", errors.New("field not found: " + fieldName)
-	}
-
-	return field.Tag.Get("mm"), nil
 }
 
 // SetMMResponse 設置 MetaMessage 響應（兼容 gin 的 JSON 方法風格）

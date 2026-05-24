@@ -1,10 +1,12 @@
-package ginmm
+package mmgin
 
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	mm "github.com/metamessage/metamessage"
@@ -105,7 +107,7 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 			body, err = io.ReadAll(io.LimitReader(c.Request.Body, config.MaxBodySize+1))
 			if int64(len(body)) > config.MaxBodySize {
 				AbortWithMetaMessage(c, http.StatusRequestEntityTooLarge, mmError{
-					Error: "request body too large",
+					Error: fmt.Sprintf("request body too large: %d > %d", int64(len(body)), config.MaxBodySize),
 				})
 				return
 			}
@@ -115,7 +117,7 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 
 		if err != nil {
 			AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
-				Error: "failed to read request body",
+				Error: fmt.Sprintf("failed to read request body: %s", err.Error()),
 			})
 			return
 		}
@@ -132,7 +134,7 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 }
 
 // Bind 將請求體綁定到目標結構體
-// 在 handler 中使用：var req MyRequest; if err := ginmm.Bind(c, &req); err != nil { ... }
+// 在 handler 中使用：var req MyRequest; if err := mmgin.Bind(c, &req); err != nil { ... }
 func Bind(c *gin.Context, obj any) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
@@ -252,7 +254,7 @@ func AbortWithMetaMessage(c *gin.Context, code int, obj any) {
 		// 編碼出錯時使用最簡結構重試
 		fallback := struct {
 			Error string `mm:"desc=錯誤信息"`
-		}{Error: "internal server error"}
+		}{Error: fmt.Sprintf("internal server error: %s", err.Error())}
 		encoded, _ = mm.EncodeFromValue(fallback, "")
 	}
 	c.Status(code)
@@ -269,11 +271,201 @@ func OptionsHandler(obj any) gin.HandlerFunc {
 		encoded, err := mm.EncodeFromValue(obj, "")
 		if err != nil {
 			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
-				Error: "failed to encode schema",
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
 			})
 			return
 		}
 		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+	}
+}
+
+// RouteGroup 包裝 gin.RouterGroup
+type RouteGroup struct {
+	*gin.RouterGroup
+}
+
+// Group 從 gin.RouterGroup 創建 RouteGroup
+func Group(rg *gin.RouterGroup) *RouteGroup {
+	return &RouteGroup{RouterGroup: rg}
+}
+
+var defaultGroup *gin.RouterGroup
+
+// Init 初始化 MetaMessage 中間件和路由分組
+// 內部自動註冊 MetaMessageDecoder 和 MetaMessageEncoder 中間件，
+// 並將返回的分組作為所有路由方法（GET/POST/PUT/DELETE 等）的默認分組。
+// Init 後可直接使用 mmgin.GET, mmgin.POST 等註冊路由。
+func Init(r *gin.Engine, relativePath string) *gin.RouterGroup {
+	r.Use(MetaMessageDecoder(nil))
+	r.Use(MetaMessageEncoder(nil))
+	rg := r.Group(relativePath)
+	defaultGroup = rg
+	return rg
+}
+
+// GET 註冊 GET 路由
+func GET(relativePath string, handlers ...gin.HandlerFunc) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before GET()")
+	}
+	defaultGroup.GET(relativePath, handlers...)
+}
+
+// HEAD 註冊 HEAD 路由
+func HEAD(relativePath string, handlers ...gin.HandlerFunc) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before HEAD()")
+	}
+	defaultGroup.HEAD(relativePath, handlers...)
+}
+
+// DELETE 註冊 DELETE 路由
+func DELETE(relativePath string, handlers ...gin.HandlerFunc) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before DELETE()")
+	}
+	defaultGroup.DELETE(relativePath, handlers...)
+}
+
+// OPTIONS 註冊 OPTIONS 路由
+func OPTIONS(relativePath string, handlers ...gin.HandlerFunc) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before OPTIONS()")
+	}
+	defaultGroup.OPTIONS(relativePath, handlers...)
+}
+
+// Any 註冊所有 HTTP 方法路由
+func Any(relativePath string, handlers ...gin.HandlerFunc) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before Any()")
+	}
+	defaultGroup.Any(relativePath, handlers...)
+}
+
+// Handler 定義帶有自動請求綁定的 handler 類型
+// T 為請求結構體類型，handler 接收 *T 指針
+type Handler[T any] func(c *gin.Context, req *T)
+
+// POST 註冊 POST 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
+// 需要在 Init() 之後調用
+func POST[T any](relativePath string, handler Handler[T]) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before POST()")
+	}
+	defaultGroup.Handle("POST", relativePath, func(c *gin.Context) {
+		var req T
+		if err := MustBindAndValidate(c, &req); err != nil {
+			return
+		}
+		handler(c, &req)
+	})
+	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
+		var sample T
+		// initSafeDefaults(&sample)
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
+			})
+			return
+		}
+		c.Header("Allow", "POST, OPTIONS")
+		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+	})
+}
+
+// PUT 註冊 PUT 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
+// 需要在 Init() 之後調用
+func PUT[T any](relativePath string, handler Handler[T]) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before PUT()")
+	}
+	defaultGroup.Handle("PUT", relativePath, func(c *gin.Context) {
+		var req T
+		if err := MustBindAndValidate(c, &req); err != nil {
+			return
+		}
+		handler(c, &req)
+	})
+	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
+		var sample T
+		// initSafeDefaults(&sample)
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
+			})
+			return
+		}
+		c.Header("Allow", "PUT, OPTIONS")
+		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+	})
+}
+
+// PATCH 註冊 PATCH 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
+// 需要在 Init() 之後調用
+func PATCH[T any](relativePath string, handler Handler[T]) {
+	if defaultGroup == nil {
+		panic("mmgin: Init() must be called before PATCH()")
+	}
+	defaultGroup.Handle("PATCH", relativePath, func(c *gin.Context) {
+		var req T
+		if err := MustBindAndValidate(c, &req); err != nil {
+			return
+		}
+		handler(c, &req)
+	})
+	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
+		var sample T
+		// initSafeDefaults(&sample)
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
+			})
+			return
+		}
+		c.Header("Allow", "PATCH, OPTIONS")
+		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+	})
+}
+
+// initSafeDefaults 為 Schema 發現設置安全的默認值，避免零值違反約束（如 min=1）
+func initSafeDefaults(obj any) {
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if !field.CanSet() {
+			continue
+		}
+		tag := t.Field(i).Tag.Get("mm")
+		switch field.Kind() {
+		case reflect.String:
+			if field.String() == "" {
+				if strings.Contains(tag, "type=email") {
+					field.SetString("x@x.com")
+				} else {
+					field.SetString("x")
+				}
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if field.Int() == 0 {
+				field.SetInt(1)
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if field.Uint() == 0 {
+				field.SetUint(1)
+			}
+		case reflect.Float32, reflect.Float64:
+			if field.Float() == 0 {
+				field.SetFloat(1)
+			}
+		}
 	}
 }
 

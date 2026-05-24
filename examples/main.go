@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginmm "github.com/metamessage/gin-mm"
 	mm "github.com/metamessage/metamessage"
+	mmgin "github.com/metamessage/mm-gin"
 )
 
 // ============ 共享類型 ============
@@ -22,7 +22,7 @@ import (
 // 特殊類型（如 email）需手動 type=email
 // 不建議同時使用 json 標籤，mm 會自動處理
 type User struct {
-	ID       int64  `mm:"desc=用戶ID; allow_empty"`
+	ID       int64  `mm:"desc=用戶ID"`
 	Name     string `mm:"desc=用戶名稱; min=1; max=50; allow_empty"`
 	Email    string `mm:"type=email; desc=電子郵箱; allow_empty"`
 	Age      uint8  `mm:"desc=年齡; min=0; max=150; allow_empty"`
@@ -62,7 +62,7 @@ type ListUsersResponse struct {
 type APIResponse struct {
 	Code    int    `mm:"desc=狀態碼; allow_empty"`
 	Message string `mm:"desc=消息; allow_empty"`
-	Data    User   `mm:"desc=數據; allow_empty"`
+	Data    *User  `mm:"desc=數據; allow_empty"`
 }
 
 // HealthResponse 健康檢查響應
@@ -96,29 +96,24 @@ func runServer(port string) *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// 使用 MetaMessage 中間件
-	r.Use(ginmm.MetaMessageDecoder(nil))
-	r.Use(ginmm.MetaMessageEncoder(nil))
+	// 一行初始化：中間件 + 路由分組
+	// Init 後所有路由方法統一使用 mmgin.GET/POST/PUT/DELETE 等
+	mmgin.Init(r, "/api/v1")
 
 	// API 路由
-	api := r.Group("/api/v1")
+	// POST/PUT 泛型函數自動綁定請求並註冊 OPTIONS
 	{
 		// 數據端點
-		api.GET("/users", listUsers)
-		api.GET("/users/:id", getUser)
-		api.POST("/users", createUser)
-		api.PUT("/users/:id", updateUser)
-		api.DELETE("/users/:id", deleteUser)
-
-		// Schema 發現端點（OPTIONS）
-		// 返回對應請求的結構體，客戶端可用於發現請求格式
-		api.OPTIONS("/users", ginmm.OptionsHandler(CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}))
-		api.OPTIONS("/users/:id", ginmm.OptionsHandler(UpdateUserRequest{}))
+		mmgin.GET("/users", listUsers)
+		mmgin.GET("/users/:id", getUser)
+		mmgin.POST("/users", createUser)
+		mmgin.PUT("/users/:id", updateUser)
+		mmgin.DELETE("/users/:id", deleteUser)
 	}
 
 	// 健康檢查
 	r.GET("/health", func(c *gin.Context) {
-		ginmm.Respond(c, HealthResponse{Status: "ok"}, "")
+		mmgin.Respond(c, HealthResponse{Status: "ok"}, "")
 	})
 
 	go func() {
@@ -139,7 +134,7 @@ var users = []User{
 }
 
 func listUsers(c *gin.Context) {
-	ginmm.Respond(c, ListUsersResponse{
+	mmgin.Respond(c, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
 	}, "desc=用戶列表響應")
@@ -149,20 +144,14 @@ func getUser(c *gin.Context) {
 	id := c.Param("id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			ginmm.Respond(c, APIResponse{Code: 0, Message: "success", Data: u}, "")
+			mmgin.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
 			return
 		}
 	}
-	ginmm.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
-func createUser(c *gin.Context) {
-	var req CreateUserRequest
-	if err := ginmm.MustBindAndValidate(c, &req); err != nil {
-		log.Printf("Validation error: %v", err)
-		return
-	}
-
+func createUser(c *gin.Context, req *CreateUserRequest) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -172,23 +161,15 @@ func createUser(c *gin.Context) {
 	}
 	users = append(users, newUser)
 
-	ginmm.RespondWithStatus(c, http.StatusCreated, APIResponse{
+	mmgin.RespondWithStatus(c, http.StatusCreated, APIResponse{
 		Code:    0,
 		Message: "user created",
-		Data:    newUser,
+		Data:    &newUser,
 	}, "")
 }
 
-func updateUser(c *gin.Context) {
+func updateUser(c *gin.Context, req *UpdateUserRequest) {
 	id := c.Param("id")
-
-	var req UpdateUserRequest
-	if err := ginmm.Bind(c, &req); err != nil {
-		ginmm.AbortWithMetaMessage(c, http.StatusBadRequest, ErrorResponse{
-			Error: "failed to bind: " + err.Error(),
-		})
-		return
-	}
 
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
@@ -205,11 +186,11 @@ func updateUser(c *gin.Context) {
 				users[i].IsActive = *req.IsActive
 			}
 
-			ginmm.Respond(c, APIResponse{Code: 0, Message: "user updated", Data: users[i]}, "")
+			mmgin.Respond(c, APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "")
 			return
 		}
 	}
-	ginmm.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
 func deleteUser(c *gin.Context) {
@@ -217,11 +198,11 @@ func deleteUser(c *gin.Context) {
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			ginmm.Respond(c, APIResponse{Code: 0, Message: "user deleted", Data: User{}}, "")
+			mmgin.Respond(c, APIResponse{Code: 0, Message: "user deleted", Data: nil}, "")
 			return
 		}
 	}
-	ginmm.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
 // ============ 客戶端 ============
@@ -291,7 +272,7 @@ func (c *Client) ListUsers(ctx context.Context) (*ListUsersResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode metamessage: %w", err)
 	}
-	fmt.Println("jsonc", jsonc)
+	fmt.Println("res", jsonc)
 	return &result, nil
 }
 
@@ -384,6 +365,8 @@ func (c *Client) Schema(ctx context.Context, method, path string, out any) (stri
 
 	if out != nil {
 		if err := mm.DecodeToValue(data, out); err != nil {
+			jsonc, _ := mm.DecodeToJsonc(data)
+			fmt.Println("error", jsonc)
 			return "", fmt.Errorf("decode metamessage: %w", err)
 		}
 	}

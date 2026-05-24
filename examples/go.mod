@@ -4,7 +4,7 @@ go 1.25.4
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/metamessage/gin-mm v0.0.1
+	github.com/metamessage/mm-gin v0.0.1
 	github.com/metamessage/metamessage v0.1.15
 )
 
@@ -35,4 +35,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/metamessage/gin-mm => ../
+replace github.com/metamessage/mm-gin => ../
