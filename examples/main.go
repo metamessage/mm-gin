@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	mm "github.com/metamessage/metamessage"
 	mmgin "github.com/metamessage/mm-gin"
+	"github.com/metamessage/mm-gin/client"
 )
 
 // ============ 共享類型 ============
@@ -23,7 +20,7 @@ import (
 // 不建議同時使用 json 標籤，mm 會自動處理
 type User struct {
 	ID       int64  `mm:"desc=用戶ID"`
-	Name     string `mm:"desc=用戶名稱; min=1; max=50; allow_empty"`
+	Name     string `mm:"desc=用戶名稱; min=1; max=50"`
 	Email    string `mm:"type=email; desc=電子郵箱; allow_empty"`
 	Age      uint8  `mm:"desc=年齡; min=0; max=150; allow_empty"`
 	IsActive bool   `mm:"desc=是否激活"`
@@ -36,13 +33,19 @@ type CreateUserRequest struct {
 	Age   uint8  `mm:"desc=年齡; min=0; max=150"`
 }
 
-// Validate 自定義驗證
-func (r *CreateUserRequest) Validate() error {
-	if r.Age < 18 {
-		return fmt.Errorf("用戶必須年滿18歲")
-	}
-	return nil
+type CreateUserRequest2 struct {
+	Name  string `mm:"desc=用戶名稱; min=1; max=50"`
+	Email string `mm:"type=email; desc=電子郵箱"`
+	Age   uint8  `mm:"desc=年齡; min=0; max=150"`
 }
+
+// Validate 自定義驗證
+// func (r *CreateUserRequest) Validate() error {
+// 	if r.Age < 18 {
+// 		return fmt.Errorf("用戶必須年滿18歲")
+// 	}
+// 	return nil
+// }
 
 // UpdateUserRequest 更新用戶請求
 type UpdateUserRequest struct {
@@ -205,197 +208,20 @@ func deleteUser(c *gin.Context) {
 	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
-// ============ 客戶端 ============
-
-// Client HTTP 客戶端
-// 請求體發送 JSONC 格式，響應始終接收 MetaMessage 二進制格式
-type Client struct {
-	baseURL    string
-	httpClient *http.Client
-}
-
-// NewClient 創建客戶端
-func NewClient(baseURL string) *Client {
-	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-	}
-}
-
-// doRequest 執行 HTTP 請求
-// 請求和響應都使用 MetaMessage 二進制格式
-func (c *Client) doRequest(method, path string, body any) ([]byte, int, error) {
-	var reqBody io.Reader
-	if body != nil {
-		data, err := mm.EncodeFromValue(body, "")
-		if err != nil {
-			return nil, 0, fmt.Errorf("encode metamessage: %w", err)
-		}
-		reqBody = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequest(method, c.baseURL+path, reqBody)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// 請求和響應都使用 MetaMessage 二進制格式
-	req.Header.Set("Content-Type", "application/x-metamessage")
-	req.Header.Set("Accept", "application/x-metamessage")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-
-	return data, resp.StatusCode, err
-}
-
-// ListUsers 獲取用戶列表
-func (c *Client) ListUsers(ctx context.Context) (*ListUsersResponse, error) {
-	data, _, err := c.doRequest("GET", "/api/v1/users", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// 解碼 MetaMessage 二進制到結構體
-	var result ListUsersResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	jsonc, err := mm.DecodeToJsonc(data)
-	if err != nil {
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	fmt.Println("res", jsonc)
-	return &result, nil
-}
-
-// GetUser 獲取單個用戶
-func (c *Client) GetUser(ctx context.Context, id int64) (*APIResponse, error) {
-	data, _, err := c.doRequest("GET", fmt.Sprintf("/api/v1/users/%d", id), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var result APIResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		jsonc, _ := mm.DecodeToJsonc(data)
-		fmt.Println("error", jsonc)
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	return &result, nil
-}
-
-// CreateUser 創建用戶
-func (c *Client) CreateUser(ctx context.Context, req CreateUserRequest) (*APIResponse, error) {
-	data, _, err := c.doRequest("POST", "/api/v1/users", req)
-	if err != nil {
-		return nil, err
-	}
-
-	var result APIResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		jsonc, _ := mm.DecodeToJsonc(data)
-		fmt.Println("error", jsonc)
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	return &result, nil
-}
-
-// UpdateUser 更新用戶
-func (c *Client) UpdateUser(ctx context.Context, id int64, req UpdateUserRequest) (*APIResponse, error) {
-	data, _, err := c.doRequest("PUT", fmt.Sprintf("/api/v1/users/%d", id), req)
-	if err != nil {
-		return nil, err
-	}
-
-	var result APIResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		jsonc, _ := mm.DecodeToJsonc(data)
-		fmt.Println("error", jsonc)
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	return &result, nil
-}
-
-// DeleteUser 刪除用戶
-func (c *Client) DeleteUser(ctx context.Context, id int64) (*APIResponse, error) {
-	data, _, err := c.doRequest("DELETE", fmt.Sprintf("/api/v1/users/%d", id), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var result APIResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		jsonc, _ := mm.DecodeToJsonc(data)
-		fmt.Println("error", jsonc)
-		return nil, fmt.Errorf("decode metamessage: %w", err)
-	}
-	return &result, nil
-}
-
-// Health 健康檢查
-func (c *Client) Health(ctx context.Context) (string, error) {
-	data, _, err := c.doRequest("GET", "/health", nil)
-	if err != nil {
-		return "", err
-	}
-
-	var result HealthResponse
-	if err := mm.DecodeToValue(data, &result); err != nil {
-		return "", fmt.Errorf("decode metamessage: %w", err)
-	}
-	return result.Status, nil
-}
-
-// Schema 發送 OPTIONS 請求獲取端點的請求結構
-// out 是目標結構體的指針，用於接收解碼後的結構信息
-// 返回結構體的 JSONC 表示（可用於打印）
-func (c *Client) Schema(ctx context.Context, method, path string, out any) (string, error) {
-	data, _, err := c.doRequest("OPTIONS", path, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if out != nil {
-		if err := mm.DecodeToValue(data, out); err != nil {
-			jsonc, _ := mm.DecodeToJsonc(data)
-			fmt.Println("error", jsonc)
-			return "", fmt.Errorf("decode metamessage: %w", err)
-		}
-	}
-
-	// 解碼為 JSONC 用於打印
-	jsoncStr, err := mm.DecodeToJsonc(data)
-	if err != nil {
-		jsonc, _ := mm.DecodeToJsonc(data)
-		fmt.Println("error", jsonc)
-		return "", fmt.Errorf("decode to jsonc: %w", err)
-	}
-	return jsoncStr, nil
-}
-
 // ============ 測試示例 ============
 
 func runTestsWithPort(port string) {
-	ctx := context.Background()
 	baseURL := fmt.Sprintf("http://localhost:%s", port)
 
 	fmt.Println("\n" + "=" + repeat("=", 60))
 	fmt.Println("🧪 使用 MetaMessage 二進制協議測試 CRUD...")
 	fmt.Println(repeat("=", 61) + "[]")
 
-	client := NewClient(baseURL)
+	client.SetDefaultClient(baseURL) // 設置全局默認客戶端，方便直接使用 mmgin.GET/POST 等函數
 
 	// 列出用戶
 	fmt.Println("\n  📋 GET /api/v1/users")
-	resp, err := client.ListUsers(ctx)
+	resp, err := client.GET[any, ListUsersResponse]("/api/v1/users", nil)
 	if err != nil {
 		fmt.Printf("  ❌ Error: %v\n", err)
 		return
@@ -407,7 +233,7 @@ func runTestsWithPort(port string) {
 
 	// 獲取單個用戶
 	fmt.Println("\n  📋 GET /api/v1/users/1")
-	resp2, err := client.GetUser(ctx, 1)
+	resp2, err := client.GET[any, APIResponse]("/api/v1/users/1", nil)
 	if err != nil {
 		fmt.Printf("  ❌ Error: %v\n", err)
 		return
@@ -417,12 +243,12 @@ func runTestsWithPort(port string) {
 
 	// 創建用戶
 	fmt.Println("\n  📋 POST /api/v1/users")
-	createReq := CreateUserRequest{
+	createReq := CreateUserRequest2{
 		Name:  "David",
 		Email: "david@example.com",
 		Age:   28,
 	}
-	resp3, err := client.CreateUser(ctx, createReq)
+	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/users", createReq)
 	if err != nil {
 		fmt.Printf("  ❌ Error: %v\n", err)
 		return
@@ -436,7 +262,7 @@ func runTestsWithPort(port string) {
 	updateReq := UpdateUserRequest{
 		Name: &name,
 	}
-	resp4, err := client.UpdateUser(ctx, 1, updateReq)
+	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", updateReq)
 	if err != nil {
 		fmt.Printf("  ❌ Error: %v\n", err)
 		return
@@ -444,33 +270,23 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  ✅ 成功! Message: %s\n", resp4.Message)
 	fmt.Printf("     Updated User: %+v\n", resp4.Data)
 
-	// Schema 發現測試
-	fmt.Println("\n  📋 OPTIONS /api/v1/users (Schema 發現)")
-	var createSchema CreateUserRequest
-	createJSONC, err := client.Schema(ctx, "POST", "/api/v1/users", &createSchema)
-	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
-	} else {
-		fmt.Printf("  ✅ JSONC:\n%s\n", createJSONC)
-	}
-
-	fmt.Println("\n  📋 OPTIONS /api/v1/users/:id (Schema 發現)")
-	var updateSchema UpdateUserRequest
-	updateJSONC, err := client.Schema(ctx, "PUT", "/api/v1/users/1", &updateSchema)
-	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
-	} else {
-		fmt.Printf("  ✅ JSONC:\n%s\n", updateJSONC)
-	}
-
 	// 刪除用戶
 	fmt.Println("\n  📋 DELETE /api/v1/users/3")
-	resp5, err := client.DeleteUser(ctx, 3)
+	resp5, err := client.DELETE[any, APIResponse]("/api/v1/users/3", nil)
 	if err != nil {
 		fmt.Printf("  ❌ Error: %v\n", err)
 		return
 	}
 	fmt.Printf("  ✅ 成功! Message: %s\n", resp5.Message)
+
+	// 健康檢查
+	fmt.Println("\n  📋 GET /api/v1/health")
+	resp6, err := client.GET[any, APIResponse]("/api/v1/health", nil)
+	if err != nil {
+		fmt.Printf("  ❌ Error: %v\n", err)
+		return
+	}
+	fmt.Printf("  ✅ 成功! Message: %s\n", resp6.Message)
 }
 
 func repeat(s string, n int) string {

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	mm "github.com/metamessage/metamessage"
@@ -362,7 +360,6 @@ func POST[T any](relativePath string, handler Handler[T]) {
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T
-		// initSafeDefaults(&sample)
 		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
 			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
@@ -390,7 +387,6 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T
-		// initSafeDefaults(&sample)
 		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
 			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
@@ -418,7 +414,6 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T
-		// initSafeDefaults(&sample)
 		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
 			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
@@ -429,44 +424,6 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 		c.Header("Allow", "PATCH, OPTIONS")
 		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
 	})
-}
-
-// initSafeDefaults 為 Schema 發現設置安全的默認值，避免零值違反約束（如 min=1）
-func initSafeDefaults(obj any) {
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	t := v.Type()
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if !field.CanSet() {
-			continue
-		}
-		tag := t.Field(i).Tag.Get("mm")
-		switch field.Kind() {
-		case reflect.String:
-			if field.String() == "" {
-				if strings.Contains(tag, "type=email") {
-					field.SetString("x@x.com")
-				} else {
-					field.SetString("x")
-				}
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if field.Int() == 0 {
-				field.SetInt(1)
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if field.Uint() == 0 {
-				field.SetUint(1)
-			}
-		case reflect.Float32, reflect.Float64:
-			if field.Float() == 0 {
-				field.SetFloat(1)
-			}
-		}
-	}
 }
 
 // detectFormat 根據 Content-Type 檢測數據格式
