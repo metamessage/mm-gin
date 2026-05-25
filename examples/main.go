@@ -12,12 +12,12 @@ import (
 	"github.com/metamessage/mm-gin/client"
 )
 
-// ============ 共享類型 ============
+// ============ Shared Types ============
 
-// User 用戶結構體
-// Go 原生類型可自動推斷，不需 type 標籤
-// 特殊類型（如 email）需手動 type=email
-// 不建議同時使用 json 標籤，mm 會自動處理
+// User represents a user entity.
+// Native Go types are auto-inferred; no type tag needed.
+// Special types (e.g., email) require explicit type=email tag.
+// Avoid using json tags simultaneously; mm handles encoding automatically.
 type User struct {
 	ID       int64  `mm:"desc=用戶ID"`
 	Name     string `mm:"desc=用戶名稱; min=1; max=50"`
@@ -26,7 +26,7 @@ type User struct {
 	IsActive bool   `mm:"desc=是否激活"`
 }
 
-// CreateUserRequest 創建用戶請求
+// CreateUserRequest is the request struct for creating a user.
 type CreateUserRequest struct {
 	Name  string `mm:"desc=用戶名稱; min=1; max=50"`
 	Email string `mm:"type=email; desc=電子郵箱"`
@@ -39,15 +39,15 @@ type CreateUserRequest2 struct {
 	Age   uint8  `mm:"desc=年齡; min=0; max=150"`
 }
 
-// Validate 自定義驗證
+// Validate performs custom validation for CreateUserRequest.
 // func (r *CreateUserRequest) Validate() error {
 // 	if r.Age < 18 {
-// 		return fmt.Errorf("用戶必須年滿18歲")
+// 		return fmt.Errorf("user must be at least 18 years old")
 // 	}
 // 	return nil
 // }
 
-// UpdateUserRequest 更新用戶請求
+// UpdateUserRequest is the request struct for updating a user.
 type UpdateUserRequest struct {
 	Name     *string `mm:"desc=用戶名稱"`
 	Email    *string `mm:"type=email; desc=電子郵箱"`
@@ -55,30 +55,30 @@ type UpdateUserRequest struct {
 	IsActive *bool   `mm:"desc=是否激活"`
 }
 
-// ListUsersResponse 用戶列表響應
+// ListUsersResponse is the response struct for listing users.
 type ListUsersResponse struct {
 	Total int64  `mm:"desc=總數"`
 	Users []User `mm:"desc=用戶列表"`
 }
 
-// APIResponse 通用 API 響應
+// APIResponse is a generic API response wrapper.
 type APIResponse struct {
 	Code    int    `mm:"desc=狀態碼; allow_empty"`
 	Message string `mm:"desc=消息; allow_empty"`
 	Data    *User  `mm:"desc=數據; allow_empty"`
 }
 
-// HealthResponse 健康檢查響應
+// HealthResponse is the response struct for health check.
 type HealthResponse struct {
 	Status string `mm:"desc=狀態"`
 }
 
-// ErrorResponse 錯誤響應
+// ErrorResponse is the response struct for errors.
 type ErrorResponse struct {
 	Error string `mm:"desc=錯誤信息"`
 }
 
-// findAvailablePort 從指定端口開始查找可用端口
+// findAvailablePort finds an available port starting from the given port number.
 func findAvailablePort(startPort int) int {
 	for port := startPort; port < startPort+100; port++ {
 		addr := fmt.Sprintf(":%d", port)
@@ -91,7 +91,7 @@ func findAvailablePort(startPort int) int {
 	return startPort
 }
 
-// ============ 服務端 ============
+// ============ Server ============
 
 func runServer(port string) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -99,14 +99,14 @@ func runServer(port string) *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// 一行初始化：中間件 + 路由分組
-	// Init 後所有路由方法統一使用 mmgin.GET/POST/PUT/DELETE 等
+	// One-line initialization: middleware + route group
+	// After Init, all route methods use mmgin.GET/POST/PUT/DELETE uniformly.
 	mmgin.Init(r, "/api/v1")
 
-	// API 路由
-	// POST/PUT 泛型函數自動綁定請求並註冊 OPTIONS
+	// API routes
+	// POST/PUT generic functions auto-bind requests and register OPTIONS schema discovery.
 	{
-		// 數據端點
+		// Data endpoints
 		mmgin.GET("/users", listUsers)
 		mmgin.GET("/users/:id", getUser)
 		mmgin.POST("/users", createUser)
@@ -114,14 +114,14 @@ func runServer(port string) *gin.Engine {
 		mmgin.DELETE("/users/:id", deleteUser)
 	}
 
-	// 健康檢查
-	r.GET("/health", func(c *gin.Context) {
-		mmgin.Respond(c, HealthResponse{Status: "ok"}, "")
+	// Health check
+	r.GET("/api/v1/health", func(c *gin.Context) {
+		mmgin.Respond(c, HealthResponse{Status: "ok"}, "desc=健康檢查響應")
 	})
 
 	go func() {
 		addr := ":" + port
-		log.Printf("🚀 Server starting on %s", addr)
+		log.Printf("Server starting on %s", addr)
 		if err := r.Run(addr); err != nil {
 			log.Fatalf("Server failed: %v", err)
 		}
@@ -208,85 +208,85 @@ func deleteUser(c *gin.Context) {
 	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
-// ============ 測試示例 ============
+// ============ Test / Client Example ============
 
 func runTestsWithPort(port string) {
 	baseURL := fmt.Sprintf("http://localhost:%s", port)
 
 	fmt.Println("\n" + "=" + repeat("=", 60))
-	fmt.Println("🧪 使用 MetaMessage 二進制協議測試 CRUD...")
+	fmt.Println("[Test] CRUD with MetaMessage binary protocol...")
 	fmt.Println(repeat("=", 61) + "[]")
 
-	client.SetDefaultClient(baseURL) // 設置全局默認客戶端，方便直接使用 mmgin.GET/POST 等函數
+	client.SetDefaultClient(baseURL, true) // Set global default client for convenience
 
-	// 列出用戶
-	fmt.Println("\n  📋 GET /api/v1/users")
+	// List users
+	fmt.Println("\n  [GET] /api/v1/users")
 	resp, err := client.GET[any, ListUsersResponse]("/api/v1/users", nil)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Total: %d\n", resp.Total)
+	fmt.Printf("  [OK] Total: %d\n", resp.Total)
 	for _, u := range resp.Users {
 		fmt.Printf("     - ID: %d, Name: %s, Email: %s, Age: %d\n", u.ID, u.Name, u.Email, u.Age)
 	}
 
-	// 獲取單個用戶
-	fmt.Println("\n  📋 GET /api/v1/users/1")
+	// Get single user
+	fmt.Println("\n  [GET] /api/v1/users/1")
 	resp2, err := client.GET[any, APIResponse]("/api/v1/users/1", nil)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Message: %s\n", resp2.Message)
+	fmt.Printf("  [OK] Message: %s\n", resp2.Message)
 	fmt.Printf("     User: %+v\n", resp2.Data)
 
-	// 創建用戶
-	fmt.Println("\n  📋 POST /api/v1/users")
-	createReq := CreateUserRequest2{
+	// Create user
+	fmt.Println("\n  [POST] /api/v1/users")
+	createReq := &CreateUserRequest2{
 		Name:  "David",
 		Email: "david@example.com",
 		Age:   28,
 	}
 	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/users", createReq)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Message: %s\n", resp3.Message)
+	fmt.Printf("  [OK] Message: %s\n", resp3.Message)
 	fmt.Printf("     New User: %+v\n", resp3.Data)
 
-	// 更新用戶
-	fmt.Println("\n  📋 PUT /api/v1/users/1")
+	// Update user
+	fmt.Println("\n  [PUT] /api/v1/users/1")
 	name := "Alice Updated"
-	updateReq := UpdateUserRequest{
+	updateReq := &UpdateUserRequest{
 		Name: &name,
 	}
 	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", updateReq)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Message: %s\n", resp4.Message)
+	fmt.Printf("  [OK] Message: %s\n", resp4.Message)
 	fmt.Printf("     Updated User: %+v\n", resp4.Data)
 
-	// 刪除用戶
-	fmt.Println("\n  📋 DELETE /api/v1/users/3")
+	// Delete user
+	fmt.Println("\n  [DELETE] /api/v1/users/3")
 	resp5, err := client.DELETE[any, APIResponse]("/api/v1/users/3", nil)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Message: %s\n", resp5.Message)
+	fmt.Printf("  [OK] Message: %s\n", resp5.Message)
 
-	// 健康檢查
-	fmt.Println("\n  📋 GET /api/v1/health")
-	resp6, err := client.GET[any, APIResponse]("/api/v1/health", nil)
+	// Health check
+	fmt.Println("\n  [HealthCheck] /api/v1/health")
+	resp6, err := client.GET[any, HealthResponse]("/api/v1/health", nil)
 	if err != nil {
-		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
-	fmt.Printf("  ✅ 成功! Message: %s\n", resp6.Message)
+	fmt.Printf("  [OK] Status: %s\n", resp6.Status)
 }
 
 func repeat(s string, n int) string {
@@ -297,30 +297,30 @@ func repeat(s string, n int) string {
 	return result
 }
 
-// ============ 主函數 ============
+// ============ Main ============
 
 func main() {
-	// 自動查找可用端口
+	// Auto-find available port
 	availablePort := findAvailablePort(8080)
 	port := fmt.Sprintf("%d", availablePort)
 	if availablePort != 8080 {
-		fmt.Printf("⚠️  端口 8080 已被佔用，自動切換到端口 %s\n", port)
+		fmt.Printf("[Warning] Port 8080 is in use, switching to port %s\n", port)
 	}
 
-	// 啟動服務端
+	// Start server
 	runServer(port)
 
-	// 等待服務端啟動
+	// Wait for server to start
 	time.Sleep(500 * time.Millisecond)
 
-	// 使用實際端口運行測試
+	// Run tests with the actual port
 	runTestsWithPort(port)
 
 	fmt.Println("\n" + repeat("=", 61))
-	fmt.Println("✨ 所有測試完成!")
+	fmt.Println("[Done] All tests completed!")
 	fmt.Println(repeat("=", 61))
 
-	// 保持運行以便繼續測試
-	fmt.Println("\n按 Ctrl+C 退出...")
+	// Keep running for further testing
+	fmt.Println("\nPress Ctrl+C to exit...")
 	select {}
 }

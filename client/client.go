@@ -10,34 +10,40 @@ import (
 	mm "github.com/metamessage/metamessage"
 )
 
-// Client HTTP 客戶端
-// 請求體發送 JSONC 格式，響應始終接收 MetaMessage 二進制格式
+// Client is an HTTP client for MetaMessage protocol communication.
+// Request bodies are encoded in MetaMessage binary format;
+// responses are always expected in MetaMessage format.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	debug      bool
 }
 
-// NewClient 創建客戶端
-func NewClient(baseURL string) *Client {
+// NewClient creates a new Client with the given base URL.
+func NewClient(baseURL string, debug bool) *Client {
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		debug: debug,
 	}
 }
 
-func SetDefaultClient(baseURL string) {
-	defaultClient = NewClient(baseURL)
+// SetDefaultClient sets the global default client with the given base URL.
+func SetDefaultClient(baseURL string, debug bool) {
+	defaultClient = NewClient(baseURL, debug)
 }
 
-var defaultClient = NewClient("")
+// defaultClient is the global default client used by package-level functions.
+var defaultClient = NewClient("", false)
 
-// DoRequest 執行 HTTP 請求（泛型）
-// 對於 POST/PUT/PATCH 請求，會先發送 OPTIONS 請求驗證 Schema，
-// 確保請求結構體與服務端期望的格式匹配後再發送實際請求
-// GET/DELETE/OPTIONS 等無請求體的方法，T 可指定為 any
-func DoRequest[REQ any, RESP any](c *Client, method, path string, body REQ) (resp RESP, err error) {
+// DoRequest executes an HTTP request with generic request/response types.
+// For POST/PUT/PATCH requests, it first sends an OPTIONS preflight to validate
+// the request schema against the server, ensuring the request struct matches
+// the expected format before sending the actual request.
+// For GET/DELETE/OPTIONS (bodyless methods), specify T as any.
+func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (resp RESP, err error) {
 	shouldEncode := method == "POST" || method == "PUT" || method == "PATCH"
 
 	if shouldEncode {
@@ -50,7 +56,7 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body REQ) (res
 	var reqBody io.Reader
 	if shouldEncode {
 		var data []byte
-		data, err = mm.EncodeFromValue(body, "")
+		data, err = mm.EncodeFromValue(*body, "")
 		if err != nil {
 			err = fmt.Errorf("encode metamessage failed: %w", err)
 			return
@@ -88,44 +94,46 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body REQ) (res
 		return
 	}
 
-	jsonc, err := mm.DecodeToJsonc(data)
-	if err != nil {
-		err = fmt.Errorf("decode metamessage failed: %w", err)
-		return
+	if c.debug {
+		jsonc, _ := mm.DecodeToJsonc(data)
+		fmt.Printf("%s %s:\n%s\n", method, path, jsonc)
 	}
-
-	fmt.Println("res:\n", jsonc)
 	return
 }
 
-func GET[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
+// GET sends a GET request using the default client.
+func GET[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
 	return DoRequest[REQ, RESP](defaultClient, "GET", path, body)
 }
 
-func POST[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
+// POST sends a POST request using the default client.
+func POST[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
 	return DoRequest[REQ, RESP](defaultClient, "POST", path, body)
 }
 
-func PUT[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
+// PUT sends a PUT request using the default client.
+func PUT[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
 	return DoRequest[REQ, RESP](defaultClient, "PUT", path, body)
 }
 
-func DELETE[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
+// DELETE sends a DELETE request using the default client.
+func DELETE[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
 	return DoRequest[REQ, RESP](defaultClient, "DELETE", path, body)
 }
 
-func PATCH[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
+// PATCH sends a PATCH request using the default client.
+func PATCH[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
 	return DoRequest[REQ, RESP](defaultClient, "PATCH", path, body)
 }
 
-// func OPTIONS[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
-// 	return DoRequest[REQ, RESP](defaultClient, "OPTIONS", path, body)
+// func OPTIONS[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
+// 	return DoRequest[*REQ, RESP](defaultClient, "OPTIONS", path, body)
 // }
 
-// func HEAD[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
-// 	return DoRequest[REQ, RESP](defaultClient, "HEAD", path, body)
+// func HEAD[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
+// 	return DoRequest[*REQ, RESP](defaultClient, "HEAD", path, body)
 // }
 
-// func TRACE[REQ any, RESP any](path string, body REQ) (resp RESP, err error) {
-// 	return DoRequest[REQ, RESP](defaultClient, "TRACE", path, body)
+// func TRACE[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
+// 	return DoRequest[*REQ, RESP](defaultClient, "TRACE", path, body)
 // }

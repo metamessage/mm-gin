@@ -10,25 +10,25 @@ import (
 	mm "github.com/metamessage/metamessage"
 )
 
-// ContentTypeMetaMessage MetaMessage 二進制格式 Content-Type
+// ContentTypeMetaMessage is the Content-Type for MetaMessage binary format.
 const ContentTypeMetaMessage = "application/x-metamessage"
 
-// ContentTypeJSONC JSONC 格式 Content-Type
+// ContentTypeJSONC is the Content-Type for JSONC format.
 const ContentTypeJSONC = "application/jsonc"
 
-// DecodeConfig 請求解碼配置
+// DecodeConfig configures request body decoding behavior.
 type DecodeConfig struct {
-	// 是否允許 JSONC 格式請求
+	// AllowJSONC enables JSONC format request parsing.
 	AllowJSONC bool
-	// 是否允許 MetaMessage 二進制格式請求
+	// AllowMetaMessage enables MetaMessage binary format request parsing.
 	AllowMetaMessage bool
-	// 默認解析格式（當無法從 Content-Type 判斷時）
+	// DefaultFormat specifies the parsing format when Content-Type cannot be determined.
 	DefaultFormat FormatType
-	// 最大請求體大小（字節），0 表示不限制
+	// MaxBodySize is the maximum request body size in bytes. 0 means unlimited.
 	MaxBodySize int64
 }
 
-// FormatType 數據格式類型
+// FormatType represents the data format type for encoding/decoding.
 type FormatType int
 
 const (
@@ -37,17 +37,17 @@ const (
 	FormatMetaMessage
 )
 
-// EncodeConfig 響應編碼配置
+// EncodeConfig configures response encoding behavior.
 type EncodeConfig struct {
-	// 默認響應格式
+	// DefaultFormat specifies the default response format.
 	DefaultFormat FormatType
-	// 是否根據請求的 Accept 頭自動選擇格式
+	// AutoNegotiate determines whether to auto-select format based on Accept header.
 	AutoNegotiate bool
-	// 響應狀態碼
+	// SuccessCode is the HTTP status code for successful responses.
 	SuccessCode int
 }
 
-// DefaultDecodeConfig 默認解碼配置
+// DefaultDecodeConfig returns the default decode configuration.
 func DefaultDecodeConfig() *DecodeConfig {
 	return &DecodeConfig{
 		AllowJSONC:       true,
@@ -57,7 +57,7 @@ func DefaultDecodeConfig() *DecodeConfig {
 	}
 }
 
-// DefaultEncodeConfig 默認編碼配置
+// DefaultEncodeConfig returns the default encode configuration.
 func DefaultEncodeConfig() *EncodeConfig {
 	return &EncodeConfig{
 		DefaultFormat: FormatMetaMessage,
@@ -66,25 +66,26 @@ func DefaultEncodeConfig() *EncodeConfig {
 	}
 }
 
-// mmError 用於 MetaMessage 格式的錯誤響應
+// mmError represents an error response in MetaMessage format.
 type mmError struct {
 	Error string `mm:"desc=錯誤信息"`
 }
 
+// MMResp wraps response data with an optional mm tag for MetaMessage encoding.
 type MMResp struct {
 	Data any
 	Tag  string
 }
 
-// MetaMessageDecoder 請求體解碼中間件
-// 將請求體（JSONC 或 MetaMessage 二進制）解碼到指定的結構體
+// MetaMessageDecoder is a middleware that decodes request bodies.
+// It supports both JSONC and MetaMessage binary formats, decoding into the target struct.
 func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 	if config == nil {
 		config = DefaultDecodeConfig()
 	}
 
 	return func(c *gin.Context) {
-		// 只處理有請求體的方法
+		// Skip methods that do not carry a request body
 		if c.Request.Method == http.MethodGet ||
 			c.Request.Method == http.MethodHead ||
 			c.Request.Method == http.MethodDelete ||
@@ -93,11 +94,9 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 			return
 		}
 
-		// 檢查 Content-Type
 		contentType := c.ContentType()
 		format := detectFormat(contentType, config.DefaultFormat)
 
-		// 讀取請求體
 		var body []byte
 		var err error
 
@@ -120,10 +119,10 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 			return
 		}
 
-		// 重新設置 Request.Body 以便後續中間件可以讀取
+		// Restore Request.Body so subsequent middleware can re-read it
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 
-		// 存儲原始請求體和格式信息到上下文
+		// Store raw body and format in context for later binding
 		c.Set("mm_raw_body", body)
 		c.Set("mm_format", format)
 
@@ -131,12 +130,12 @@ func MetaMessageDecoder(config *DecodeConfig) gin.HandlerFunc {
 	}
 }
 
-// Bind 將請求體綁定到目標結構體
-// 在 handler 中使用：var req MyRequest; if err := mmgin.Bind(c, &req); err != nil { ... }
+// Bind binds the request body to the target struct.
+// Usage in handler: var req MyRequest; if err := mmgin.Bind(c, &req); err != nil { ... }
 func Bind(c *gin.Context, obj any) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
-		// 如果沒有經過解碼中間件，直接讀取請求體
+		// Read request body directly if no prior decode middleware ran
 		data, err := io.ReadAll(c.Request.Body)
 		if err != nil {
 			return err
@@ -150,7 +149,7 @@ func Bind(c *gin.Context, obj any) error {
 
 	data := body.([]byte)
 
-	// 根據格式選擇解碼方式
+	// Decode based on detected format
 	switch format {
 	case FormatMetaMessage:
 		return mm.DecodeToValue(data, obj)
@@ -158,7 +157,7 @@ func Bind(c *gin.Context, obj any) error {
 		jsoncStr := string(data)
 		return mm.JsoncToValue(jsoncStr, obj)
 	default:
-		// 自動檢測格式
+		// Auto-detect format from binary content
 		if len(data) > 0 && isBinaryMetaMessage(data) {
 			return mm.DecodeToValue(data, obj)
 		}
@@ -166,7 +165,7 @@ func Bind(c *gin.Context, obj any) error {
 	}
 }
 
-// BindWithTag 使用指定的 tag 將請求體綁定到目標結構體
+// BindWithTag binds the request body to the target struct using the specified mm tag.
 func BindWithTag(c *gin.Context, obj any, tag string) error {
 	body, exists := c.Get("mm_raw_body")
 	if !exists {
@@ -197,8 +196,8 @@ func BindWithTag(c *gin.Context, obj any, tag string) error {
 	}
 }
 
-// MetaMessageEncoder 響應編碼中間件
-// 將 handler 設置的響應數據編碼為 MetaMessage 二進制格式
+// MetaMessageEncoder is a middleware that encodes response data.
+// It encodes the response set by handlers into MetaMessage binary format.
 func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 	if config == nil {
 		config = DefaultEncodeConfig()
@@ -207,18 +206,18 @@ func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
-		// 如果已經寫入響應或發生錯誤，不進行編碼
+		// Skip encoding if the request was aborted or response was already written
 		if c.IsAborted() || c.Writer.Written() {
 			return
 		}
 
-		// 獲取響應數據
+		// Retrieve response data set by handler
 		data, exists := c.Get("mm_response")
 		if !exists {
 			return
 		}
 
-		// 始終編碼為 MetaMessage 二進制格式
+		// Always encode to MetaMessage binary format
 		mmResp := data.(MMResp)
 		encoded, err := mm.EncodeFromValue(mmResp.Data, mmResp.Tag)
 		if err != nil {
@@ -232,24 +231,24 @@ func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 	}
 }
 
-// Respond 設置響應數據（供 handler 使用）
+// Respond sets response data for MetaMessage encoding (used by handlers).
 func Respond(c *gin.Context, data any, tag string) {
 	c.Set("mm_response", MMResp{Data: data, Tag: tag})
 }
 
-// RespondWithStatus 設置響應數據和狀態碼
+// RespondWithStatus sets response data and HTTP status code.
 func RespondWithStatus(c *gin.Context, code int, data any, tag string) {
 	c.Set("mm_response", MMResp{Data: data, Tag: tag})
 	c.Status(code)
 }
 
-// AbortWithMetaMessage 返回 MetaMessage 格式的錯誤響應並中止請求
-// 所有錯誤都使用 MetaMessage 格式，保證響應格式一致
-// 即使編碼出錯也返回 MetaMessage 格式
+// AbortWithMetaMessage sends a MetaMessage-format error response and aborts the request.
+// All errors use MetaMessage format to ensure consistent response format.
+// Falls back to a minimal error struct even if encoding itself fails.
 func AbortWithMetaMessage(c *gin.Context, code int, obj any) {
 	encoded, err := mm.EncodeFromValue(obj, "")
 	if err != nil {
-		// 編碼出錯時使用最簡結構重試
+		// Retry with a minimal fallback struct on encoding failure
 		fallback := struct {
 			Error string `mm:"desc=錯誤信息"`
 		}{Error: fmt.Sprintf("internal server error: %s", err.Error())}
@@ -261,9 +260,9 @@ func AbortWithMetaMessage(c *gin.Context, code int, obj any) {
 	c.Abort()
 }
 
-// OptionsHandler 返回 OPTIONS 請求的處理函數
-// 用於 Schema 發現：客戶端發送 OPTIONS 請求即可獲取請求體的結構信息
-// 返回值是一個 MetaMessage 編碼的結構體實例，包含完整的類型、約束和描述
+// OptionsHandler returns a handler for OPTIONS requests.
+// Used for schema discovery: clients send OPTIONS to receive the request struct schema.
+// Returns a MetaMessage-encoded struct instance with full type, constraint, and description info.
 func OptionsHandler(obj any) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		encoded, err := mm.EncodeFromValue(obj, "")
@@ -277,22 +276,22 @@ func OptionsHandler(obj any) gin.HandlerFunc {
 	}
 }
 
-// RouteGroup 包裝 gin.RouterGroup
+// RouteGroup wraps gin.RouterGroup for extended routing capabilities.
 type RouteGroup struct {
 	*gin.RouterGroup
 }
 
-// Group 從 gin.RouterGroup 創建 RouteGroup
+// Group creates a RouteGroup from a gin.RouterGroup.
 func Group(rg *gin.RouterGroup) *RouteGroup {
 	return &RouteGroup{RouterGroup: rg}
 }
 
 var defaultGroup *gin.RouterGroup
 
-// Init 初始化 MetaMessage 中間件和路由分組
-// 內部自動註冊 MetaMessageDecoder 和 MetaMessageEncoder 中間件，
-// 並將返回的分組作為所有路由方法（GET/POST/PUT/DELETE 等）的默認分組。
-// Init 後可直接使用 mmgin.GET, mmgin.POST 等註冊路由。
+// Init initializes MetaMessage middleware and a route group.
+// It registers MetaMessageDecoder and MetaMessageEncoder internally,
+// and sets the returned group as the default for all route registration functions
+// (GET, POST, PUT, DELETE, etc.). After Init, use mmgin.GET, mmgin.POST directly.
 func Init(r *gin.Engine, relativePath string) *gin.RouterGroup {
 	r.Use(MetaMessageDecoder(nil))
 	r.Use(MetaMessageEncoder(nil))
@@ -301,7 +300,7 @@ func Init(r *gin.Engine, relativePath string) *gin.RouterGroup {
 	return rg
 }
 
-// GET 註冊 GET 路由
+// GET registers a GET route.
 func GET(relativePath string, handlers ...gin.HandlerFunc) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before GET()")
@@ -309,7 +308,7 @@ func GET(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.GET(relativePath, handlers...)
 }
 
-// HEAD 註冊 HEAD 路由
+// HEAD registers a HEAD route.
 func HEAD(relativePath string, handlers ...gin.HandlerFunc) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before HEAD()")
@@ -317,7 +316,7 @@ func HEAD(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.HEAD(relativePath, handlers...)
 }
 
-// DELETE 註冊 DELETE 路由
+// DELETE registers a DELETE route.
 func DELETE(relativePath string, handlers ...gin.HandlerFunc) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before DELETE()")
@@ -325,7 +324,7 @@ func DELETE(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.DELETE(relativePath, handlers...)
 }
 
-// OPTIONS 註冊 OPTIONS 路由
+// OPTIONS registers an OPTIONS route.
 func OPTIONS(relativePath string, handlers ...gin.HandlerFunc) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before OPTIONS()")
@@ -333,7 +332,7 @@ func OPTIONS(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.OPTIONS(relativePath, handlers...)
 }
 
-// Any 註冊所有 HTTP 方法路由
+// Any registers a route for all HTTP methods.
 func Any(relativePath string, handlers ...gin.HandlerFunc) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before Any()")
@@ -341,12 +340,13 @@ func Any(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.Any(relativePath, handlers...)
 }
 
-// Handler 定義帶有自動請求綁定的 handler 類型
-// T 為請求結構體類型，handler 接收 *T 指針
+// Handler defines a generic handler type with automatic request binding.
+// T is the request struct type; the handler receives a *T pointer.
 type Handler[T any] func(c *gin.Context, req *T)
 
-// POST 註冊 POST 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
-// 需要在 Init() 之後調用
+// POST registers a POST route with auto-binding and automatically registers
+// an OPTIONS route on the same path for schema discovery.
+// Must be called after Init().
 func POST[T any](relativePath string, handler Handler[T]) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before POST()")
@@ -354,6 +354,9 @@ func POST[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.Handle("POST", relativePath, func(c *gin.Context) {
 		var req T
 		if err := MustBindAndValidate(c, &req); err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("binding failed: %s", err.Error()),
+			})
 			return
 		}
 		handler(c, &req)
@@ -372,8 +375,9 @@ func POST[T any](relativePath string, handler Handler[T]) {
 	})
 }
 
-// PUT 註冊 PUT 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
-// 需要在 Init() 之後調用
+// PUT registers a PUT route with auto-binding and automatically registers
+// an OPTIONS route on the same path for schema discovery.
+// Must be called after Init().
 func PUT[T any](relativePath string, handler Handler[T]) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before PUT()")
@@ -399,8 +403,9 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 	})
 }
 
-// PATCH 註冊 PATCH 路由，自動綁定請求並為相同路徑註冊 OPTIONS（Schema 發現）
-// 需要在 Init() 之後調用
+// PATCH registers a PATCH route with auto-binding and automatically registers
+// an OPTIONS route on the same path for schema discovery.
+// Must be called after Init().
 func PATCH[T any](relativePath string, handler Handler[T]) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before PATCH()")
@@ -426,7 +431,7 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 	})
 }
 
-// detectFormat 根據 Content-Type 檢測數據格式
+// detectFormat detects the data format from the Content-Type header.
 func detectFormat(contentType string, defaultFormat FormatType) FormatType {
 	switch contentType {
 	case ContentTypeMetaMessage, "application/octet-stream":
@@ -437,17 +442,16 @@ func detectFormat(contentType string, defaultFormat FormatType) FormatType {
 		if defaultFormat != FormatAuto {
 			return defaultFormat
 		}
-		return FormatJSONC // 默認嘗試 JSONC
+		return FormatJSONC // Default to JSONC
 	}
 }
 
-// isBinaryMetaMessage 檢測數據是否為 MetaMessage 二進制格式
+// isBinaryMetaMessage detects whether the data is in MetaMessage binary format.
 func isBinaryMetaMessage(data []byte) bool {
 	if len(data) < 2 {
 		return false
 	}
-	// 檢查是否為有效的 MetaMessage 格式（非 JSON）
-	// JSON 通常以 { 或 [ 開頭
+	// Valid MetaMessage binary does not start with JSON delimiters ({, [, ")
 	firstChar := data[0]
 	return firstChar != '{' && firstChar != '[' && firstChar != '"'
 }

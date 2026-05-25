@@ -1,14 +1,19 @@
-# gin-mm
+# mm-gin
 
-MetaMessage の Gin フレームワークプラグイン。エンコード/デコードとデータバインディング機能を提供します。
+MetaMessage プロトコルの Gin フレームワークプラグイン。エンコード/デコード、データバインディング、スキーマディスカバリー、ジェネリックルート登録を提供します。
+
+[中文](README.md) | [English](README.en.md) | **日本語** | [한국어](README.ko.md)
 
 ## 機能
 
-- **リクエストデコード**: JSONC と MetaMessage バイナリ形式のリクエストボディを自動検出・デコード
-- **レスポンスエンコード**: レスポンスデータを JSONC または MetaMessage 形式に自動エンコード
+- **一行初期化**: `mmgin.Init(r, "/api/v1")` でミドルウェアとルートグループを一度に登録
+- **ジェネリックルート登録**: `mmgin.POST[T](path, handler)` による自動型安全リクエストバインディング
+- **スキーマディスカバリー**: POST/PUT/PATCH が自動で OPTIONS を登録し、クライアントのリクエスト検証を支援
+- **リクエストデコード**: JSONC および MetaMessage バイナリ形式のリクエストボディを自動検出・デコード
+- **レスポンスエンコード**: レスポンスデータを MetaMessage バイナリ形式に自動エンコード
 - **データバインディング**: リクエストボディ、クエリパラメータ、URI パラメータ、ヘッダーのバインディングをサポート
-- **コンテンツネゴシエーション**: Accept ヘッダーに基づいてレスポンス形式を自動選択
-- **カスタム検証**: 構造体のカスタム検証ロジックをサポート
+- **カスタム検証**: `Validator` インターフェースによる構造体レベルのカスタム検証ロジック
+- **HTTP クライアント**: スキーマ事前検証付きジェネリック `DoRequest[REQ, RESP]`
 
 ## インストール
 
@@ -18,149 +23,270 @@ go get github.com/metamessage/mm-gin
 
 ## クイックスタート
 
+### サーバー
+
 ```go
 package main
 
 import (
     "github.com/gin-gonic/gin"
-    ginmm "github.com/metamessage/mm-gin"
+    mmgin "github.com/metamessage/mm-gin"
 )
 
-type User struct {
-    Name  string `mm:"type=str;desc=ユーザー名" json:"name"`
-    Email string `mm:"type=email;desc=メールアドレス" json:"email"`
-    Age   int    `mm:"type=uint8;desc=年齢" json:"age"`
+type CreateUserRequest struct {
+    Name  string `mm:"desc=User name; min=1; max=50"`
+    Email string `mm:"type=email; desc=Email address"`
+    Age   uint8  `mm:"desc=Age; min=0; max=150"`
+}
+
+type UserResponse struct {
+    ID    int64  `mm:"desc=User ID"`
+    Name  string `mm:"desc=User name"`
+    Email string `mm:"type=email; desc=Email address"`
+    Age   uint8  `mm:"desc=Age"`
 }
 
 func main() {
     r := gin.Default()
 
-    // グローバルミドルウェアを使用
-    r.Use(ginmm.MetaMessageDecoder(nil))
-    r.Use(ginmm.MetaMessageEncoder(nil))
+    // 一行初期化：ミドルウェア + ルートグループ
+    mmgin.Init(r, "/api/v1")
 
-    r.POST("/users", func(c *gin.Context) {
-        var user User
-        if err := ginmm.Bind(c, &user); err != nil {
-            c.JSON(400, gin.H{"error": err.Error()})
-            return
-        }
-        ginmm.Respond(c, user)
+    // 自動バインディングと OPTIONS スキーマディスカバリー付きジェネリックルート
+    mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+        mmgin.Respond(c, UserResponse{
+            ID:    1,
+            Name:  req.Name,
+            Email: req.Email,
+            Age:   req.Age,
+        }, "")
     })
 
     r.Run(":8080")
 }
 ```
 
+### クライアント
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/metamessage/mm-gin/client"
+)
+
+func main() {
+    client.SetDefaultClient("http://localhost:8080")
+
+    // スキーマ検証付きジェネリックリクエスト
+    req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
+    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("User: %+v\n", resp)
+}
+```
+
 ## API ドキュメント
+
+### 一行初期化
+
+#### Init
+
+`Init` は `MetaMessageDecoder` と `MetaMessageEncoder` ミドルウェアを登録し、ルートグループを作成して、以降のすべてのルート登録のデフォルトとして設定します。
+
+```go
+rg := mmgin.Init(r, "/api/v1")
+// 以降 mmgin.GET/POST/PUT/DELETE などはすべてこのグループを使用
+```
+
+---
+
+### ルート登録
+
+#### GET / HEAD / DELETE / OPTIONS / Any
+
+自動バインディングが不要なメソッドの標準ルート登録：
+
+```go
+mmgin.GET("/users", listUsers)
+mmgin.GET("/users/:id", getUser)
+mmgin.DELETE("/users/:id", deleteUser)
+mmgin.HEAD("/health", healthCheck)
+mmgin.OPTIONS("/resources", optionsHandler)
+mmgin.Any("/catch-all", catchAllHandler)
+```
+
+#### ジェネリック POST / PUT / PATCH
+
+自動リクエストバインディングと OPTIONS スキーマディスカバリーを備えたジェネリックルート登録：
+
+```go
+// Handler[T any] 定義: func(c *gin.Context, req *T)
+type Handler[T any] func(c *gin.Context, req *T)
+
+mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+    // req は自動バインディング・検証済み
+    mmgin.Respond(c, UserResponse{...}, "")
+})
+
+mmgin.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) {
+    mmgin.Respond(c, APIResponse{...}, "")
+})
+```
+
+各 POST/PUT/PATCH ルートは同じパスに OPTIONS エンドポイントを自動登録します。クライアントは OPTIONS リクエストを送信することで、リクエスト構造体のスキーマ（MetaMessage バイナリでエンコード）を取得できます。
+
+---
 
 ### ミドルウェア
 
 #### MetaMessageDecoder
 
-リクエストボディデコードミドルウェア。JSONC と MetaMessage バイナリ形式をサポート。
+JSONC および MetaMessage バイナリ形式をサポートするリクエストボディデコードミドルウェア。
 
 ```go
 // デフォルト設定を使用
-r.Use(ginmm.MetaMessageDecoder(nil))
+r.Use(mmgin.MetaMessageDecoder(nil))
 
 // カスタム設定
-config := &ginmm.DecodeConfig{
+config := &mmgin.DecodeConfig{
     AllowJSONC:       true,
     AllowMetaMessage: true,
-    DefaultFormat:    ginmm.FormatAuto,
+    DefaultFormat:    mmgin.FormatAuto,
     MaxBodySize:      10 << 20, // 10MB
 }
-r.Use(ginmm.MetaMessageDecoder(config))
+r.Use(mmgin.MetaMessageDecoder(config))
 ```
 
 #### MetaMessageEncoder
 
-レスポンスエンコードミドルウェア。レスポンスデータを指定形式に自動エンコード。
+ハンドラが設定したレスポンスデータを MetaMessage バイナリ形式にエンコードするレスポンスエンコードミドルウェア。
 
 ```go
 // デフォルト設定を使用
-r.Use(ginmm.MetaMessageEncoder(nil))
+r.Use(mmgin.MetaMessageEncoder(nil))
 
 // カスタム設定
-config := &ginmm.EncodeConfig{
-    DefaultFormat: ginmm.FormatMetaMessage,
-    AutoNegotiate: true,
-    SuccessCode:   200,
+config := &mmgin.EncodeConfig{
+    DefaultFormat: mmgin.FormatMetaMessage,
+    AutoNegotiate: false,
+    SuccessCode:   http.StatusOK,
 }
-r.Use(ginmm.MetaMessageEncoder(config))
+r.Use(mmgin.MetaMessageEncoder(config))
 ```
+
+---
 
 ### データバインディング
 
 #### Bind
 
-リクエストボディを構造体にバインド。
+リクエストボディを構造体にバインド（形式自動検出）：
 
 ```go
 var user User
-if err := ginmm.Bind(c, &user); err != nil {
+if err := mmgin.Bind(c, &user); err != nil {
+    // エラー処理
+}
+```
+
+#### BindWithTag
+
+指定された mm タグを使用してリクエストボディをバインド：
+
+```go
+var user User
+if err := mmgin.BindWithTag(c, &user, "custom_tag"); err != nil {
     // エラー処理
 }
 ```
 
 #### MustBind
 
-データをバインド。失敗時は自動的に 400 エラーレスポンスを返す。
+バインドし、失敗時に自動で 400 エラーレスポンスを返す：
 
 ```go
 var user User
-if err := ginmm.MustBind(c, &user); err != nil {
-    return // エラーレスポンスは既に処理済み
+if err := mmgin.MustBind(c, &user); err != nil {
+    return // エラーレスポンスは自動送信済み
+}
+```
+
+#### ShouldBind / ShouldBindWithTag
+
+中断せずにエラーを返す亜種：
+
+```go
+var user User
+if err := mmgin.ShouldBind(c, &user); err != nil {
+    // 手動でエラー処理
 }
 ```
 
 #### BindQuery
 
-クエリパラメータを構造体にバインド。
+クエリパラメータを構造体にバインド：
 
 ```go
 var filter Filter
-if err := ginmm.BindQuery(c, &filter); err != nil {
+if err := mmgin.BindQuery(c, &filter); err != nil {
+    // エラー処理
+}
+```
+
+#### BindHeader
+
+リクエストヘッダーを構造体にバインド：
+
+```go
+var headers Headers
+if err := mmgin.BindHeader(c, &headers); err != nil {
     // エラー処理
 }
 ```
 
 #### BindUri
 
-URI パラメータを構造体にバインド。
+URI パラメータを構造体にバインド：
 
 ```go
 var params Params
-ginmm.BindUri(c, &params)
-```
-
-#### AutoBind
-
-すべてのデータソースを自動バインド（URI パラメータ > クエリパラメータ > リクエストボディ）。
-
-```go
-var req Request
-if err := ginmm.AutoBind(c, &req); err != nil {
+if err := mmgin.BindUri(c, &params); err != nil {
     // エラー処理
 }
 ```
 
+#### AutoBind
+
+すべてのソースから自動バインド（優先順位：URI パラメータ > クエリパラメータ > リクエストボディ）：
+
+```go
+var req Request
+if err := mmgin.AutoBind(c, &req); err != nil {
+    // エラー処理
+}
+```
+
+---
+
 ### データ検証
 
-#### カスタムバリデータ
+#### Validator インターフェース
 
-`Validator` インターフェースを実装：
+カスタム検証ロジックのために `Validator` インターフェースを実装：
 
 ```go
 type CreateUserRequest struct {
-    Name string `mm:"type=str" json:"name"`
-    Age  int    `mm:"type=uint8" json:"age"`
+    Name string `mm:"desc=User name"`
+    Age  uint8  `mm:"desc=Age"`
 }
 
 func (r *CreateUserRequest) Validate() error {
     if r.Age < 18 {
-        return errors.New("ユーザーは18歳以上である必要があります")
+        return fmt.Errorf("user must be at least 18 years old")
     }
     return nil
 }
@@ -172,74 +298,170 @@ func (r *CreateUserRequest) Validate() error {
 
 ```go
 var req CreateUserRequest
-if err := ginmm.BindAndValidate(c, &req); err != nil {
+if err := mmgin.BindAndValidate(c, &req); err != nil {
     // エラー処理
 }
 ```
 
 #### MustBindAndValidate
 
-バインドと検証を行い、失敗時は自動的にエラーレスポンスを返す：
+バインドと検証を行い、失敗時に自動でエラーレスポンスを返す：
 
 ```go
 var req CreateUserRequest
-if err := ginmm.MustBindAndValidate(c, &req); err != nil {
-    return // エラーレスポンスは既に処理済み
+if err := mmgin.MustBindAndValidate(c, &req); err != nil {
+    return // エラーレスポンスは自動送信済み
 }
 ```
+
+---
 
 ### レスポンス関数
 
 #### Respond
 
-レスポンスデータを設定（エンコードミドルウェアによって処理）。
+エンコードミドルウェア用にレスポンスデータを設定。オプションの mm タグ文字列を受け付けます：
 
 ```go
-ginmm.Respond(c, data)
+mmgin.Respond(c, User{Name: "Alice"}, "")
+mmgin.Respond(c, users, "desc=User list response")
 ```
 
 #### RespondWithStatus
 
-レスポンスデータとステータスコードを設定。
+カスタム HTTP ステータスコードとともにレスポンスデータを設定：
 
 ```go
-ginmm.RespondWithStatus(c, http.StatusCreated, data)
+mmgin.RespondWithStatus(c, http.StatusCreated, APIResponse{
+    Code:    0,
+    Message: "user created",
+    Data:    &newUser,
+}, "")
+```
+
+#### SetMMResponse
+
+レスポンスデータを直接設定（gin の JSON メソッドスタイルと互換）：
+
+```go
+mmgin.SetMMResponse(c, http.StatusOK, data)
 ```
 
 #### JSONC
 
-JSONC 形式のレスポンスを直接返す。
+JSONC 形式のレスポンスを直接返す：
 
 ```go
-ginmm.JSONC(c, 200, data)
+mmgin.JSONC(c, http.StatusOK, data)
 ```
 
 #### MetaMessage
 
-MetaMessage バイナリ形式のレスポンスを直接返す。
+MetaMessage バイナリ形式のレスポンスを直接返す：
 
 ```go
-ginmm.MetaMessage(c, 200, data)
+mmgin.MetaMessage(c, http.StatusOK, data)
 ```
 
-## 設定オプション
+#### AbortWithMetaMessage
+
+MetaMessage 形式のエラーレスポンスを送信してリクエストを中断：
+
+```go
+mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{
+    Error: "user not found",
+})
+```
+
+#### OptionsHandler
+
+OPTIONS リクエスト用ハンドラを作成（スキーマディスカバリー）：
+
+```go
+mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
+```
+
+---
+
+### HTTP クライアント
+
+`client` パッケージは MetaMessage プロトコル通信のためのジェネリック HTTP クライアントを提供します。
+
+#### Client
+
+```go
+c := client.NewClient("http://localhost:8080")
+```
+
+#### SetDefaultClient
+
+グローバルデフォルトクライアントを設定：
+
+```go
+client.SetDefaultClient("http://localhost:8080")
+```
+
+#### DoRequest
+
+型安全なリクエスト/レスポンスでジェネリックリクエストを実行。POST/PUT/PATCH は自動的に OPTIONS 事前リクエストを送信してスキーマを検証：
+
+```go
+resp, err := client.DoRequest[CreateUserRequest, UserResponse](
+    c, "POST", "/api/v1/users", req,
+)
+```
+
+#### 便利関数
+
+デフォルトクライアントを使用するパッケージレベルの便利関数：
+
+```go
+client.GET[any, ListUsersResponse]("/api/v1/users", nil)
+client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", req)
+client.DELETE[any, APIResponse]("/api/v1/users/1", nil)
+client.PATCH[UpdateUserRequest, APIResponse]("/api/v1/users/1", req)
+```
+
+---
+
+### スキーマディスカバリー
+
+サーバーの POST/PUT/PATCH ルートはスキーマディスカバリー用に OPTIONS エンドポイントを自動登録します。OPTIONS レスポンスは、完全な型、制約、説明メタデータを含む MetaMessage エンコードされた構造体インスタンスを返します。
+
+クライアントは実際のリクエストを送信する前に、このメカニズムを自動的に使用してリクエストを検証します：
+
+```
+クライアント                        サーバー
+  │                               │
+  ├── OPTIONS /api/v1/users ──────►
+  │◄──── MetaMessage スキーマ ─────┤
+  │     (struct definition)       │
+  │                               │
+  ├── POST /api/v1/users ────────►
+  │◄──── MetaMessage レスポンス ───┤
+```
+
+---
+
+## 設定
 
 ### DecodeConfig
 
 | フィールド | 型 | デフォルト | 説明 |
 |-------|------|---------|-------------|
-| AllowJSONC | bool | true | JSONC 形式のリクエストを許可 |
-| AllowMetaMessage | bool | true | MetaMessage バイナリ形式のリクエストを許可 |
-| DefaultFormat | FormatType | FormatAuto | デフォルトの解析形式 |
-| MaxBodySize | int64 | 10MB | 最大リクエストボディサイズ |
+| AllowJSONC | bool | true | JSONC 形式のリクエスト解析を有効化 |
+| AllowMetaMessage | bool | true | MetaMessage バイナリ形式のリクエスト解析を有効化 |
+| DefaultFormat | FormatType | FormatAuto | Content-Type が不明な場合のデフォルト解析形式 |
+| MaxBodySize | int64 | 10MB | 最大リクエストボディサイズ（0 = 制限なし） |
 
 ### EncodeConfig
 
 | フィールド | 型 | デフォルト | 説明 |
 |-------|------|---------|-------------|
-| DefaultFormat | FormatType | FormatMetaMessage | デフォルトのレスポンス形式 |
-| AutoNegotiate | bool | true | Accept ヘッダーに基づいて形式を自動選択 |
-| SuccessCode | int | 200 | 成功レスポンスのステータスコード |
+| DefaultFormat | FormatType | FormatMetaMessage | デフォルトのレスポンスエンコード形式 |
+| AutoNegotiate | bool | false | Accept ヘッダーに基づいて形式を自動選択 |
+| SuccessCode | int | 200 | 成功レスポンスの HTTP ステータスコード |
 
 ### FormatType
 
@@ -249,34 +471,31 @@ FormatJSONC         // JSONC 形式
 FormatMetaMessage   // MetaMessage バイナリ形式
 ```
 
-## Content-Type
+### Content-Type 定数
 
-- `application/x-metamessage` - MetaMessage バイナリ形式
-- `application/jsonc` - JSONC 形式
+```go
+ContentTypeMetaMessage = "application/x-metamessage"
+ContentTypeJSONC       = "application/jsonc"
+```
+
+---
 
 ## 例
 
-完全な例は [examples](examples/) ディレクトリを参照してください。
+完全なサーバー + クライアントの例は [examples](examples/) を参照してください。
 
 ```bash
 cd examples
 go run main.go
 ```
 
-テストリクエスト：
+この例では以下を紹介しています：
+- `Init()` とジェネリックルート登録を使用したサーバー
+- MetaMessage バイナリプロトコルを使用した CRUD 操作
+- OPTIONS 事前リクエストによるスキーマ検証を使用するクライアント
+- カスタム検証とエラー処理
 
-```bash
-# ユーザーを作成 (JSONC)
-curl -X POST http://localhost:8080/api/v1/users \
-  -H 'Content-Type: application/jsonc' \
-  -d '{"name":"Alice","email":"alice@example.com","age":25}'
-
-# ユーザーリストを取得
-curl http://localhost:8080/api/v1/users
-
-# 単一ユーザーを取得
-curl http://localhost:8080/api/v1/users/1
-```
+---
 
 ## 依存関係
 
@@ -289,4 +508,4 @@ MIT
 
 ---
 
-**[中文](README.md)** | [English](README.en.md) | 日本語
+[中文](README.md) | [English](README.en.md) | **日本語** | [한국어](README.ko.md)
