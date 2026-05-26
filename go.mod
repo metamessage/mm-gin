@@ -1,4 +1,4 @@
-module github.com/metamessage/mm-gin
+module github.com/metamessage/mm-web
 
 go 1.25.4
 

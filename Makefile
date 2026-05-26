@@ -4,7 +4,7 @@
 .DEFAULT_GOAL := help
 
 # 變量
-BINARY_NAME := mm-gin
+BINARY_NAME := mm-web
 GO := go
 GIT := git
 REMOTE := origin
@@ -78,8 +78,8 @@ commit-msg: git-add
 
 ## remote-add: 添加遠程倉庫
 remote-add:
-	$(GIT) remote add $(REMOTE) git@github.com:metamessage/mm-gin.git 2>/dev/null || \
-	$(GIT) remote set-url $(REMOTE) git@github.com:metamessage/mm-gin.git
+	$(GIT) remote add $(REMOTE) git@github.com:metamessage/mm-web.git 2>/dev/null || \
+	$(GIT) remote set-url $(REMOTE) git@github.com:metamessage/mm-web.git
 
 ## remote-add-https: 添加遠程倉庫 (HTTPS 方式)
 # 用法: make remote-add-https TOKEN=your_github_token
@@ -88,8 +88,8 @@ remote-add-https:
 		echo "錯誤: 請提供 GitHub Token，例如: make remote-add-https TOKEN=ghp_xxx"; \
 		exit 1; \
 	fi
-	$(GIT) remote add $(REMOTE) https://$(TOKEN)@github.com/metamessage/mm-gin.git 2>/dev/null || \
-	$(GIT) remote set-url $(REMOTE) https://$(TOKEN)@github.com/metamessage/mm-gin.git
+	$(GIT) remote add $(REMOTE) https://$(TOKEN)@github.com/metamessage/mm-web.git 2>/dev/null || \
+	$(GIT) remote set-url $(REMOTE) https://$(TOKEN)@github.com/metamessage/mm-web.git
 
 ## push: 推送到遠程倉庫 (main 分支)
 push: remote-add

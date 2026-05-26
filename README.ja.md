@@ -1,4 +1,4 @@
-# mm-gin
+# mm-web
 
 MetaMessage プロトコルの Gin フレームワークプラグイン。エンコード/デコード、データバインディング、スキーマディスカバリー、ジェネリックルート登録を提供します。
 
@@ -18,7 +18,7 @@ MetaMessage プロトコルの Gin フレームワークプラグイン。エン
 ## インストール
 
 ```bash
-go get github.com/metamessage/mm-gin
+go get github.com/metamessage/mm-web
 ```
 
 ## クイックスタート
@@ -30,7 +30,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-gin"
+    mmgin "github.com/metamessage/mm-web"
 )
 
 type CreateUserRequest struct {
@@ -73,7 +73,7 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-gin/client"
+    "github.com/metamessage/mm-web/client"
 )
 
 func main() {
@@ -88,6 +88,122 @@ func main() {
     fmt.Printf("User: %+v\n", resp)
 }
 ```
+
+---
+
+### マルチフレームワークアダプター
+
+統合アダプターパッケージをインストール：
+
+```bash
+go get github.com/metamessage/mm-web/server
+```
+
+`server` パッケージは統一 API を提供します。`Init` がフレームワークを自動検出し、MetaMessage ミドルウェアをセットアップします。**POST/PUT/PATCH のハンドラーロジックはフレームワーク間で完全に移植可能です** — フレームワークの型とネイティブルーティングメソッドのみを変更します。
+
+```go
+import "github.com/metamessage/mm-web/server"
+```
+
+#### Gin
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.Default()
+server.Init(r, "/api/v1")
+
+// Gin ネイティブ API で GET/DELETE などを登録
+r.GET("/users", listUsers)
+r.GET("/users/:id", getUser)
+r.DELETE("/users/:id", deleteUser)
+
+// 統一ジェネリック API で POST/PUT/PATCH を登録（自動バインド + OPTIONS スキーマディスカバリー）
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
+	return APIResponse{Message: "updated"}, nil
+})
+```
+
+#### Echo
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+server.Init(e, "/api/v1")
+
+// Echo ネイティブ API
+e.GET("/users", listUsers)
+
+// 同一ジェネリックハンドラー、フレームワーク非依存
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Fiber
+
+```go
+import "github.com/gofiber/fiber/v2"
+
+app := fiber.New()
+server.Init(app, "/api/v1")
+
+// Fiber ネイティブ API
+app.Get("/users", listUsers)
+
+// 同一ジェネリックハンドラー
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Chi
+
+```go
+import "github.com/go-chi/chi/v5"
+
+r := chi.NewRouter()
+server.Init(r, "/api/v1")
+
+// Chi ネイティブ API
+r.Get("/users", listUsers)
+
+// 同一ジェネリックハンドラー
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### net/http
+
+```go
+mux := http.NewServeMux()
+server.Init(mux, "/api/v1")
+
+// 標準ライブラリネイティブ API
+mux.HandleFunc("/api/v1/users", listUsers)
+
+// 同一ジェネリックハンドラー
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+> フレームワーク固有の `GET`、`HEAD`、`DELETE` などのルートも `server.GET()`、`server.DELETE()` などのパッケージレベル関数で登録可能です。アクティブなフレームワークのネイティブハンドラー型を受け付けます。
+
+```go
+server.GET("/users", listUsers)
+server.DELETE("/users/:id", deleteUser)
+server.HEAD("/health", healthCheck)
+server.OPTIONS("/resources", optionsHandler)
+server.Any("/catch-all", catchAllHandler)
+```
+
+---
 
 ## API ドキュメント
 

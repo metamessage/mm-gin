@@ -1,4 +1,4 @@
-# mm-gin
+# mm-web
 
 Gin framework plugin for MetaMessage protocol, providing encoding/decoding, data binding, schema discovery and generic route registration.
 
@@ -18,7 +18,7 @@ Gin framework plugin for MetaMessage protocol, providing encoding/decoding, data
 ## Installation
 
 ```bash
-go get github.com/metamessage/mm-gin
+go get github.com/metamessage/mm-web
 ```
 
 ## Quick Start
@@ -30,7 +30,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-gin"
+    mmgin "github.com/metamessage/mm-web"
 )
 
 type CreateUserRequest struct {
@@ -73,7 +73,7 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-gin/client"
+    "github.com/metamessage/mm-web/client"
 )
 
 func main() {
@@ -88,6 +88,122 @@ func main() {
     fmt.Printf("User: %+v\n", resp)
 }
 ```
+
+---
+
+### Multi-Framework Adapter
+
+Install the unified adapter package:
+
+```bash
+go get github.com/metamessage/mm-web/server
+```
+
+The `server` package provides a unified API through `Init`, which auto-detects the framework type and sets up MetaMessage middleware. **POST/PUT/PATCH handler logic is fully portable across frameworks** — only the framework type and native routing methods change.
+
+```go
+import "github.com/metamessage/mm-web/server"
+```
+
+#### Gin
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.Default()
+server.Init(r, "/api/v1")
+
+// Use Gin's native API for GET/DELETE etc.
+r.GET("/users", listUsers)
+r.GET("/users/:id", getUser)
+r.DELETE("/users/:id", deleteUser)
+
+// Use unified generic API for POST/PUT/PATCH (auto-bind + OPTIONS schema discovery)
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
+	return APIResponse{Message: "updated"}, nil
+})
+```
+
+#### Echo
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+server.Init(e, "/api/v1")
+
+// Echo native API
+e.GET("/users", listUsers)
+
+// Same generic handler, framework-agnostic
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Fiber
+
+```go
+import "github.com/gofiber/fiber/v2"
+
+app := fiber.New()
+server.Init(app, "/api/v1")
+
+// Fiber native API
+app.Get("/users", listUsers)
+
+// Same generic handler
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Chi
+
+```go
+import "github.com/go-chi/chi/v5"
+
+r := chi.NewRouter()
+server.Init(r, "/api/v1")
+
+// Chi native API
+r.Get("/users", listUsers)
+
+// Same generic handler
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### net/http
+
+```go
+mux := http.NewServeMux()
+server.Init(mux, "/api/v1")
+
+// Standard library native API
+mux.HandleFunc("/api/v1/users", listUsers)
+
+// Same generic handler
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+> Framework-specific routes like `GET`, `HEAD`, `DELETE` can also be registered through `server.GET()`, `server.DELETE()` etc. These accept native handler types for the active framework.
+
+```go
+server.GET("/users", listUsers)
+server.DELETE("/users/:id", deleteUser)
+server.HEAD("/health", healthCheck)
+server.OPTIONS("/resources", optionsHandler)
+server.Any("/catch-all", catchAllHandler)
+```
+
+---
 
 ## API Documentation
 

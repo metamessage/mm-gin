@@ -1,4 +1,4 @@
-# mm-gin
+# mm-web
 
 Gin 框架的 MetaMessage 协议插件，提供编解码、数据绑定、Schema 发现以及泛型路由注册功能。
 
@@ -18,7 +18,7 @@ Gin 框架的 MetaMessage 协议插件，提供编解码、数据绑定、Schema
 ## 安装
 
 ```bash
-go get github.com/metamessage/mm-gin
+go get github.com/metamessage/mm-web
 ```
 
 ## 快速开始
@@ -30,7 +30,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-gin"
+    mmgin "github.com/metamessage/mm-web"
 )
 
 type CreateUserRequest struct {
@@ -72,21 +72,136 @@ func main() {
 package main
 
 import (
-    "fmt"
-    "github.com/metamessage/mm-gin/client"
+	"fmt"
+	"github.com/metamessage/mm-web/client"
 )
 
 func main() {
-    client.SetDefaultClient("http://localhost:8080")
+	client.SetDefaultClient("http://localhost:8080")
 
-    // 泛型请求，包含 Schema 验证
-    req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
-    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("User: %+v\n", resp)
+	// 泛型请求，包含 Schema 验证
+	req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
+	resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("User: %+v\n", resp)
 }
+```
+
+---
+
+### 多框架适配
+
+安装统一适配包：
+
+```bash
+go get github.com/metamessage/mm-web/server
+```
+
+`server` 包提供一套统一的 API，通过 `Init` 自动适配不同 Web 框架。**POST/PUT/PATCH 的处理逻辑完全可跨框架复用**，只需更换框架类型与原生路由方法。
+
+```go
+import "github.com/metamessage/mm-web/server"
+```
+
+#### Gin
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.Default()
+server.Init(r, "/api/v1")
+
+// 使用 Gin 原生 API 注册 GET/DELETE 等
+r.GET("/users", listUsers)
+r.GET("/users/:id", getUser)
+r.DELETE("/users/:id", deleteUser)
+
+// 使用统一泛型 API 注册 POST/PUT/PATCH（自动绑定 + OPTIONS Schema 发现）
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
+	return APIResponse{Message: "updated"}, nil
+})
+```
+
+#### Echo
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+server.Init(e, "/api/v1")
+
+// Echo 原生 API
+e.GET("/users", listUsers)
+
+// 同一泛型处理器，框架无关
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Fiber
+
+```go
+import "github.com/gofiber/fiber/v2"
+
+app := fiber.New()
+server.Init(app, "/api/v1")
+
+// Fiber 原生 API
+app.Get("/users", listUsers)
+
+// 同一泛型处理器
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Chi
+
+```go
+import "github.com/go-chi/chi/v5"
+
+r := chi.NewRouter()
+server.Init(r, "/api/v1")
+
+// Chi 原生 API
+r.Get("/users", listUsers)
+
+// 同一泛型处理器
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### net/http
+
+```go
+mux := http.NewServeMux()
+server.Init(mux, "/api/v1")
+
+// 标准库原生 API
+mux.HandleFunc("/api/v1/users", listUsers)
+
+// 同一泛型处理器
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+> 框架特定的 `GET`、`HEAD`、`DELETE`、`Any` 等路由也可通过 `server.GET()`、`server.DELETE()` 等包级函数注册，接收各框架的原生 Handler 类型。
+
+```go
+// 使用包级函数统一注册非泛型路由（handler 类型需适配当前框架）
+server.GET("/users", listUsers)
+server.DELETE("/users/:id", deleteUser)
+server.HEAD("/health", healthCheck)
+server.OPTIONS("/resources", optionsHandler)
+server.Any("/catch-all", catchAllHandler)
 ```
 
 ## API 文档

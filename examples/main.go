@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	mmgin "github.com/metamessage/mm-gin"
-	"github.com/metamessage/mm-gin/client"
+	mmgin "github.com/metamessage/mm-web"
+	"github.com/metamessage/mm-web/client"
 )
 
 // ============ Shared Types ============

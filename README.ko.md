@@ -1,4 +1,4 @@
-# mm-gin
+# mm-web
 
 Gin 프레임워크를 위한 MetaMessage 프로토콜 플러그인으로, 인코딩/디코딩, 데이터 바인딩, 스키마 디스커버리 및 제네릭 라우트 등록을 제공합니다.
 
@@ -18,7 +18,7 @@ Gin 프레임워크를 위한 MetaMessage 프로토콜 플러그인으로, 인�
 ## 설치
 
 ```bash
-go get github.com/metamessage/mm-gin
+go get github.com/metamessage/mm-web
 ```
 
 ## 빠른 시작
@@ -30,7 +30,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-gin"
+    mmgin "github.com/metamessage/mm-web"
 )
 
 type CreateUserRequest struct {
@@ -73,7 +73,7 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-gin/client"
+    "github.com/metamessage/mm-web/client"
 )
 
 func main() {
@@ -88,6 +88,122 @@ func main() {
     fmt.Printf("User: %+v\n", resp)
 }
 ```
+
+---
+
+### 멀티 프레임워크 어댑터
+
+통합 어댑터 패키지 설치:
+
+```bash
+go get github.com/metamessage/mm-web/server
+```
+
+`server` 패키지는 통합 API를 제공합니다. `Init`이 프레임워크를 자동 감지하여 MetaMessage 미들웨어를 설정합니다. **POST/PUT/PATCH 핸들러 로직은 프레임워크 간 완전히 이식 가능합니다** — 프레임워크 타입과 네이티브 라우팅 메서드만 변경하면 됩니다.
+
+```go
+import "github.com/metamessage/mm-web/server"
+```
+
+#### Gin
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.Default()
+server.Init(r, "/api/v1")
+
+// Gin 네이티브 API로 GET/DELETE 등 등록
+r.GET("/users", listUsers)
+r.GET("/users/:id", getUser)
+r.DELETE("/users/:id", deleteUser)
+
+// 통합 제네릭 API로 POST/PUT/PATCH 등록 (자동 바인딩 + OPTIONS 스키마 디스커버리)
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
+	return APIResponse{Message: "updated"}, nil
+})
+```
+
+#### Echo
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+server.Init(e, "/api/v1")
+
+// Echo 네이티브 API
+e.GET("/users", listUsers)
+
+// 동일 제네릭 핸들러, 프레임워크 비종속
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Fiber
+
+```go
+import "github.com/gofiber/fiber/v2"
+
+app := fiber.New()
+server.Init(app, "/api/v1")
+
+// Fiber 네이티브 API
+app.Get("/users", listUsers)
+
+// 동일 제네릭 핸들러
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### Chi
+
+```go
+import "github.com/go-chi/chi/v5"
+
+r := chi.NewRouter()
+server.Init(r, "/api/v1")
+
+// Chi 네이티브 API
+r.Get("/users", listUsers)
+
+// 동일 제네릭 핸들러
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+#### net/http
+
+```go
+mux := http.NewServeMux()
+server.Init(mux, "/api/v1")
+
+// 표준 라이브러리 네이티브 API
+mux.HandleFunc("/api/v1/users", listUsers)
+
+// 동일 제네릭 핸들러
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
+	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+})
+```
+
+> 프레임워크 특화 `GET`, `HEAD`, `DELETE` 등의 라우트도 `server.GET()`, `server.DELETE()` 등의 패키지 레벨 함수로 등록할 수 있습니다. 활성 프레임워크의 네이티브 핸들러 타입을 받습니다.
+
+```go
+server.GET("/users", listUsers)
+server.DELETE("/users/:id", deleteUser)
+server.HEAD("/health", healthCheck)
+server.OPTIONS("/resources", optionsHandler)
+server.Any("/catch-all", catchAllHandler)
+```
+
+---
 
 ## API 문서
 

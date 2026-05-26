@@ -1,6 +1,6 @@
 # Examples
 
-本目錄包含 mm-gin 插件的完整使用示例，包括 Server 和 Client。
+本目錄包含 mm-web 插件的完整使用示例，包括 Server 和 Client。
 
 ## 項目結構
 
