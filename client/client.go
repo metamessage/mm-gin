@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/metamessage/web"
+
 	mm "github.com/metamessage/metamessage"
 )
 
@@ -70,9 +72,9 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 		return
 	}
 
-	req.Header.Set("Accept", "application/x-metamessage")
+	req.Header.Set("Accept", web.ContentTypeMetaMessage)
 	if shouldEncode {
-		req.Header.Set("Content-Type", "application/x-metamessage")
+		req.Header.Set("Content-Type", web.ContentTypeMetaMessage)
 	}
 
 	r, err := c.httpClient.Do(req)

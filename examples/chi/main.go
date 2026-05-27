@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/metamessage/mm-web/client"
-	"github.com/metamessage/mm-web/server"
+	"github.com/metamessage/client"
+	server "github.com/metamessage/mmchi"
 )
 
 type User struct {
@@ -64,21 +64,21 @@ var users = []User{
 }
 
 func listUsers(w http.ResponseWriter, r *http.Request) {
-	mmginRespond(w, http.StatusOK, ListUsersResponse{
+	server.Respond(w, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	})
+	}, "")
 }
 
 func getUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			mmginRespond(w, http.StatusOK, APIResponse{Code: 0, Message: "success", Data: &u})
+			server.Respond(w, APIResponse{Code: 0, Message: "success", Data: &u}, "")
 			return
 		}
 	}
-	mmginRespond(w, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
 }
 
 func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
@@ -120,23 +120,15 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			mmginRespond(w, http.StatusOK, APIResponse{Code: 0, Message: "user deleted"})
+			server.Respond(w, APIResponse{Code: 0, Message: "user deleted"}, "")
 			return
 		}
 	}
-	mmginRespond(w, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.Respond(w, ErrorResponse{Error: "user not found"}, "")
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	mmginRespond(w, http.StatusOK, HealthResponse{Status: "ok"})
-}
-
-func mmginRespond(w http.ResponseWriter, code int, obj any) {
-	// For GET/DELETE handlers, respond as MetaMessage
-	// In a real app, use mmchi's respond functions
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"code":0,"message":"ok"}`)
+	server.Respond(w, HealthResponse{Status: "ok"}, "")
 }
 
 func runTestsWithPort(port string) {

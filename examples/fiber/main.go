@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/metamessage/mm-web/client"
-	"github.com/metamessage/mm-web/server"
+	"github.com/metamessage/client"
+	server "github.com/metamessage/mmfiber"
 )
 
 type User struct {
@@ -64,23 +64,26 @@ var users = []User{
 }
 
 func listUsers(c *fiber.Ctx) error {
-	return c.JSON(ListUsersResponse{
+	server.Respond(c, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	})
+	}, "")
+	return nil
 }
 
 func getUser(c *fiber.Ctx) error {
 	id := c.Params("id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			return c.JSON(APIResponse{Code: 0, Message: "success", Data: &u})
+			server.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
+			return nil
 		}
 	}
-	return c.Status(http.StatusNotFound).JSON(ErrorResponse{Error: "user not found"})
+	server.RespondWithStatus(c, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil
 }
 
-func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
+func createUser(r *fiber.Ctx, req *CreateUserRequest) (any, error) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -92,8 +95,8 @@ func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
 	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, nil
 }
 
-func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
-	id := r.PathValue("id")
+func updateUser(r *fiber.Ctx, req *UpdateUserRequest) (any, error) {
+	id := r.Params("id")
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			if req.Name != nil {
@@ -119,14 +122,17 @@ func deleteUser(c *fiber.Ctx) error {
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			return c.JSON(APIResponse{Code: 0, Message: "user deleted"})
+			server.Respond(c, APIResponse{Code: 0, Message: "user deleted"}, "")
+			return nil
 		}
 	}
-	return c.Status(http.StatusNotFound).JSON(ErrorResponse{Error: "user not found"})
+	server.RespondWithStatus(c, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil
 }
 
 func healthCheck(c *fiber.Ctx) error {
-	return c.JSON(HealthResponse{Status: "ok"})
+	server.Respond(c, HealthResponse{Status: "ok"}, "")
+	return nil
 }
 
 func runTestsWithPort(port string) {

@@ -1,24 +1,23 @@
-# mm-web
+# mm-web-go
 
-MetaMessage プロトコルの Gin フレームワークプラグイン。エンコード/デコード、データバインディング、スキーマディスカバリー、ジェネリックルート登録を提供します。
+Go WebフレームワークにMetaMessageプロトコルのサポートを提供し、エンコード/デコード、データバインディング、スキーマ発見などの機能を備えています。Gin、Echo、Fiber、Vanillaに対応。
 
 [中文](README.md) | [English](README.en.md) | **日本語** | [한국어](README.ko.md)
 
 ## 機能
 
-- **一行初期化**: `mmgin.Init(r, "/api/v1")` でミドルウェアとルートグループを一度に登録
-- **ジェネリックルート登録**: `mmgin.POST[T](path, handler)` による自動型安全リクエストバインディング
+- **一行初期化**: `server.Init(r, "/api/v1")` でミドルウェアとルートグループを一度に登録
+- **ジェネリックルート登録**: `server.POST[T](path, handler)` による自動型安全リクエストバインディング
 - **スキーマディスカバリー**: POST/PUT/PATCH が自動で OPTIONS を登録し、クライアントのリクエスト検証を支援
 - **リクエストデコード**: JSONC および MetaMessage バイナリ形式のリクエストボディを自動検出・デコード
 - **レスポンスエンコード**: レスポンスデータを MetaMessage バイナリ形式に自動エンコード
 - **データバインディング**: リクエストボディ、クエリパラメータ、URI パラメータ、ヘッダーのバインディングをサポート
-- **カスタム検証**: `Validator` インターフェースによる構造体レベルのカスタム検証ロジック
 - **HTTP クライアント**: スキーマ事前検証付きジェネリック `DoRequest[REQ, RESP]`
 
 ## インストール
 
 ```bash
-go get github.com/metamessage/mm-web
+go get github.com/metamessage/mmgin
 ```
 
 ## クイックスタート
@@ -30,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-web"
+	server "github.com/metamessage/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -50,11 +49,11 @@ func main() {
     r := gin.Default()
 
     // 一行初期化：ミドルウェア + ルートグループ
-    mmgin.Init(r, "/api/v1")
+	server.Init(r, "/api/v1")
 
     // 自動バインディングと OPTIONS スキーマディスカバリー付きジェネリックルート
-    mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-        mmgin.Respond(c, UserResponse{
+	server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+		server.Respond(c, UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
@@ -73,15 +72,15 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-web/client"
+    "github.com/metamessage/client"
 )
 
 func main() {
-    client.SetDefaultClient("http://localhost:8080")
+    client.SetDefaultClient("http://localhost:8080", false)
 
     // スキーマ検証付きジェネリックリクエスト
     req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
-    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", &req)
     if err != nil {
         panic(err)
     }
@@ -93,22 +92,11 @@ func main() {
 
 ### マルチフレームワークアダプター
 
-統合アダプターパッケージをインストール：
-
-```bash
-go get github.com/metamessage/mm-web/server
-```
-
-`server` パッケージは統一 API を提供します。`Init` がフレームワークを自動検出し、MetaMessage ミドルウェアをセットアップします。**POST/PUT/PATCH のハンドラーロジックはフレームワーク間で完全に移植可能です** — フレームワークの型とネイティブルーティングメソッドのみを変更します。
-
-```go
-import "github.com/metamessage/mm-web/server"
-```
-
 #### Gin
 
 ```go
 import "github.com/gin-gonic/gin"
+import server "github.com/metamessage/mmgin"
 
 r := gin.Default()
 server.Init(r, "/api/v1")
@@ -131,6 +119,7 @@ server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, err
 
 ```go
 import "github.com/labstack/echo/v4"
+import server "github.com/metamessage/mmecho"
 
 e := echo.New()
 server.Init(e, "/api/v1")
@@ -148,6 +137,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/gofiber/fiber/v2"
+import server "github.com/metamessage/mmfiber"
 
 app := fiber.New()
 server.Init(app, "/api/v1")
@@ -165,6 +155,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/go-chi/chi/v5"
+import server "github.com/metamessage/mmchi"
 
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
@@ -181,6 +172,8 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 #### net/http
 
 ```go
+import server "github.com/metamessage/mmvanilla"
+
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
@@ -506,7 +499,7 @@ mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
 #### Client
 
 ```go
-c := client.NewClient("http://localhost:8080")
+c := client.NewClient("http://localhost:8080", false)
 ```
 
 #### SetDefaultClient
@@ -514,7 +507,7 @@ c := client.NewClient("http://localhost:8080")
 グローバルデフォルトクライアントを設定：
 
 ```go
-client.SetDefaultClient("http://localhost:8080")
+client.SetDefaultClient("http://localhost:8080", false)
 ```
 
 #### DoRequest
@@ -609,13 +602,11 @@ go run main.go
 - `Init()` とジェネリックルート登録を使用したサーバー
 - MetaMessage バイナリプロトコルを使用した CRUD 操作
 - OPTIONS 事前リクエストによるスキーマ検証を使用するクライアント
-- カスタム検証とエラー処理
 
 ---
 
 ## 依存関係
 
-- [gin-gonic/gin](https://github.com/gin-gonic/gin) - Web フレームワーク
 - [metamessage/metamessage](https://github.com/metamessage/metamessage) - MetaMessage プロトコル実装
 
 ## ライセンス

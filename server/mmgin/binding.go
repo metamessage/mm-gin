@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	mm "github.com/metamessage/metamessage"
+	"github.com/metamessage/web"
 )
 
 // BindingError represents a field-level binding error.
@@ -277,7 +278,7 @@ func JSONC(c *gin.Context, code int, obj any) {
 		})
 		return
 	}
-	c.Data(code, ContentTypeJSONC, []byte(jsoncStr))
+	c.Data(code, web.ContentTypeJSONC, []byte(jsoncStr))
 }
 
 // MetaMessage returns a MetaMessage binary-format response.
@@ -289,5 +290,5 @@ func MetaMessage(c *gin.Context, code int, obj any) {
 		})
 		return
 	}
-	c.Data(code, ContentTypeMetaMessage, data)
+	c.Data(code, web.ContentTypeMetaMessage, data)
 }

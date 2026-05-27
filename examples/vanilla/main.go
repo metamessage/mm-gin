@@ -1,16 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/metamessage/mm-web/client"
-	"github.com/metamessage/mm-web/server"
+	"github.com/metamessage/client"
+	server "github.com/metamessage/mmvanilla"
 )
 
 type User struct {
@@ -65,45 +63,23 @@ var users = []User{
 	{ID: 3, Name: "Charlie", Email: "charlie@example.com", Age: 35, IsActive: false},
 }
 
-func jsonRespond(w http.ResponseWriter, code int, obj any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(obj)
-}
-
-func extractID(path, prefix string) (string, bool) {
-	p := strings.TrimPrefix(path, prefix)
-	p = strings.Trim(p, "/")
-	parts := strings.Split(p, "/")
-	if len(parts) == 2 && parts[0] == "users" {
-		return parts[1], true
-	}
-	if len(parts) == 1 && parts[0] == "users" {
-		return "", false
-	}
-	return "", false
-}
-
 func listUsers(w http.ResponseWriter, r *http.Request) {
-	jsonRespond(w, http.StatusOK, ListUsersResponse{
+	server.Respond(w, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	})
+	}, "")
 }
 
 func getUser(w http.ResponseWriter, r *http.Request) {
-	id, ok := extractID(r.URL.Path, "/api/v1")
-	if !ok {
-		jsonRespond(w, http.StatusNotFound, ErrorResponse{Error: "not found"})
-		return
-	}
+	idStr := r.PathValue("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for _, u := range users {
-		if fmt.Sprintf("%d", u.ID) == id {
-			jsonRespond(w, http.StatusOK, APIResponse{Code: 0, Message: "success", Data: &u})
+		if u.ID == id {
+			server.RespondWithStatus(w, http.StatusOK, APIResponse{Code: 0, Message: "success", Data: &u}, "")
 			return
 		}
 	}
-	jsonRespond(w, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
 }
 
 func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
@@ -142,23 +118,20 @@ func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
 }
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
-	id, ok := extractID(r.URL.Path, "/api/v1")
-	if !ok {
-		jsonRespond(w, http.StatusNotFound, ErrorResponse{Error: "not found"})
-		return
-	}
+	idStr := r.PathValue("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for i, u := range users {
-		if fmt.Sprintf("%d", u.ID) == id {
+		if u.ID == id {
 			users = append(users[:i], users[i+1:]...)
-			jsonRespond(w, http.StatusOK, APIResponse{Code: 0, Message: "user deleted"})
+			server.RespondWithStatus(w, http.StatusOK, APIResponse{Code: 0, Message: "user deleted"}, "")
 			return
 		}
 	}
-	jsonRespond(w, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	jsonRespond(w, http.StatusOK, HealthResponse{Status: "ok"})
+	server.Respond(w, HealthResponse{Status: "ok"}, "")
 }
 
 func runTestsWithPort(port string) {
@@ -245,20 +218,12 @@ func main() {
 
 	server.Init(mux, "/api/v1")
 
-	mux.HandleFunc("/api/v1/users", listUsers)
-	mux.HandleFunc("/api/v1/users/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getUser(w, r)
-		case http.MethodDelete:
-			deleteUser(w, r)
-		default:
-			jsonRespond(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method not allowed"})
-		}
-	})
+	server.GET("/users", listUsers)
+	server.GET("/users/{id}", getUser)
 	server.POST("/users", createUser)
 	server.PUT("/users/{id}", updateUser)
-	mux.HandleFunc("/api/v1/health", healthCheck)
+	server.DELETE("/users/{id}", deleteUser)
+	server.GET("/health", healthCheck)
 
 	go func() {
 		addr := ":8080"

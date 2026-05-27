@@ -1,24 +1,23 @@
-# mm-web
+# mm-web-go
 
-Gin 框架的 MetaMessage 协议插件，提供编解码、数据绑定、Schema 发现以及泛型路由注册功能。
+为 golang web 框架提供 MetaMessage 协议支持，提供编解码、数据绑定、Schema 发现等功能。支持gin、echo、fiber、vanilla。
 
 **[中文](README.md)** | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 ## 特性
 
-- **一行初始化**：`mmgin.Init(r, "/api/v1")` 同时注册中间件与路由组
-- **泛型路由注册**：`mmgin.POST[T](path, handler)` 自动类型安全的请求绑定
+- **一行初始化**：`mmweb.Init(r, "/api/v1")` 同时注册中间件与路由组
+- **泛型路由注册**：`mmweb.POST[T](path, handler)` 自动类型安全的请求绑定
 - **Schema 发现**：POST/PUT/PATCH 自动注册 OPTIONS，便于客户端请求验证
 - **请求解码**：自动检测并解码 JSONC 与 MetaMessage 二进制格式的请求体
 - **响应编码**：自动将响应数据编码为 MetaMessage 二进制格式
 - **数据绑定**：支持请求体、查询参数、URI 参数及请求头绑定
-- **自定义验证**：通过 `Validator` 接口支持结构级别的自定义验证逻辑
 - **HTTP 客户端**：泛型 `DoRequest[REQ, RESP]` 搭配 Schema 预检验证
 
 ## 安装
 
 ```bash
-go get github.com/metamessage/mm-web
+go get github.com/metamessage/mmgin
 ```
 
 ## 快速开始
@@ -30,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-web"
+    server "github.com/metamessage/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -50,11 +49,11 @@ func main() {
     r := gin.Default()
 
     // 一行初始化：中间件 + 路由组
-    mmgin.Init(r, "/api/v1")
+	server.Init(r, "/api/v1")
 
     // 泛型路由，自动绑定并注册 OPTIONS Schema 发现
-    mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-        mmgin.Respond(c, UserResponse{
+	server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+		server.Respond(c, UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
@@ -73,15 +72,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/metamessage/mm-web/client"
+	"github.com/metamessage/client"
 )
 
 func main() {
-	client.SetDefaultClient("http://localhost:8080")
+	client.SetDefaultClient("http://localhost:8080", false)
 
 	// 泛型请求，包含 Schema 验证
 	req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
-	resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+	resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", &req)
 	if err != nil {
 		panic(err)
 	}
@@ -93,22 +92,11 @@ func main() {
 
 ### 多框架适配
 
-安装统一适配包：
-
-```bash
-go get github.com/metamessage/mm-web/server
-```
-
-`server` 包提供一套统一的 API，通过 `Init` 自动适配不同 Web 框架。**POST/PUT/PATCH 的处理逻辑完全可跨框架复用**，只需更换框架类型与原生路由方法。
-
-```go
-import "github.com/metamessage/mm-web/server"
-```
-
 #### Gin
 
 ```go
 import "github.com/gin-gonic/gin"
+import server "github.com/metamessage/mmgin"
 
 r := gin.Default()
 server.Init(r, "/api/v1")
@@ -131,6 +119,7 @@ server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, err
 
 ```go
 import "github.com/labstack/echo/v4"
+import server "github.com/metamessage/mmecho"
 
 e := echo.New()
 server.Init(e, "/api/v1")
@@ -148,6 +137,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/gofiber/fiber/v2"
+import server "github.com/metamessage/mmfiber"
 
 app := fiber.New()
 server.Init(app, "/api/v1")
@@ -165,6 +155,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/go-chi/chi/v5"
+import server "github.com/metamessage/mmchi"
 
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
@@ -181,6 +172,8 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 #### net/http
 
 ```go
+import server "github.com/metamessage/mmvanilla"
+
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
@@ -505,7 +498,7 @@ mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
 #### Client
 
 ```go
-c := client.NewClient("http://localhost:8080")
+c := client.NewClient("http://localhost:8080", false)
 ```
 
 #### SetDefaultClient
@@ -513,7 +506,7 @@ c := client.NewClient("http://localhost:8080")
 设置全局默认客户端：
 
 ```go
-client.SetDefaultClient("http://localhost:8080")
+client.SetDefaultClient("http://localhost:8080", false)
 ```
 
 #### DoRequest
@@ -608,13 +601,11 @@ go run main.go
 - 使用 `Init()` 及泛型路由注册的服务端
 - 使用 MetaMessage 二进制协议的 CRUD 操作
 - 通过 OPTIONS 预检请求进行 Schema 验证的客户端
-- 自定义验证及错误处理
 
 ---
 
 ## 依赖
 
-- [gin-gonic/gin](https://github.com/gin-gonic/gin) - Web 框架
 - [metamessage/metamessage](https://github.com/metamessage/metamessage) - MetaMessage 协议实现
 
 ## 许可证

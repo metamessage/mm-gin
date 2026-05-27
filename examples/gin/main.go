@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	mmgin "github.com/metamessage/mm-web"
-	"github.com/metamessage/mm-web/client"
+	"github.com/metamessage/client"
+	server "github.com/metamessage/mmgin"
 )
 
 // ============ Shared Types ============
@@ -100,23 +100,23 @@ func runServer(port string) *gin.Engine {
 	r.Use(gin.Logger())
 
 	// One-line initialization: middleware + route group
-	// After Init, all route methods use mmgin.GET/POST/PUT/DELETE uniformly.
-	mmgin.Init(r, "/api/v1")
+	// After Init, all route methods use server.GET/POST/PUT/DELETE uniformly.
+	server.Init(r, "/api/v1")
 
 	// API routes
 	// POST/PUT generic functions auto-bind requests and register OPTIONS schema discovery.
 	{
 		// Data endpoints
-		mmgin.GET("/users", listUsers)
-		mmgin.GET("/users/:id", getUser)
-		mmgin.POST("/users", createUser)
-		mmgin.PUT("/users/:id", updateUser)
-		mmgin.DELETE("/users/:id", deleteUser)
+		server.GET("/users", listUsers)
+		server.GET("/users/:id", getUser)
+		server.POST("/users", createUser)
+		server.PUT("/users/:id", updateUser)
+		server.DELETE("/users/:id", deleteUser)
 	}
 
 	// Health check
 	r.GET("/api/v1/health", func(c *gin.Context) {
-		mmgin.Respond(c, HealthResponse{Status: "ok"}, "desc=健康檢查響應")
+		server.Respond(c, HealthResponse{Status: "ok"}, "desc=健康檢查響應")
 	})
 
 	go func() {
@@ -137,7 +137,7 @@ var users = []User{
 }
 
 func listUsers(c *gin.Context) {
-	mmgin.Respond(c, ListUsersResponse{
+	server.Respond(c, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
 	}, "desc=用戶列表響應")
@@ -147,11 +147,11 @@ func getUser(c *gin.Context) {
 	id := c.Param("id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			mmgin.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
+			server.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
 			return
 		}
 	}
-	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
 func createUser(c *gin.Context, req *CreateUserRequest) {
@@ -164,7 +164,7 @@ func createUser(c *gin.Context, req *CreateUserRequest) {
 	}
 	users = append(users, newUser)
 
-	mmgin.RespondWithStatus(c, http.StatusCreated, APIResponse{
+	server.RespondWithStatus(c, http.StatusCreated, APIResponse{
 		Code:    0,
 		Message: "user created",
 		Data:    &newUser,
@@ -189,11 +189,11 @@ func updateUser(c *gin.Context, req *UpdateUserRequest) {
 				users[i].IsActive = *req.IsActive
 			}
 
-			mmgin.Respond(c, APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "")
+			server.Respond(c, APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "")
 			return
 		}
 	}
-	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
 func deleteUser(c *gin.Context) {
@@ -201,11 +201,11 @@ func deleteUser(c *gin.Context) {
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			mmgin.Respond(c, APIResponse{Code: 0, Message: "user deleted", Data: nil}, "")
+			server.Respond(c, APIResponse{Code: 0, Message: "user deleted", Data: nil}, "")
 			return
 		}
 	}
-	mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
 }
 
 // ============ Test / Client Example ============

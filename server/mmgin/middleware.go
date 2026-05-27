@@ -8,13 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	mm "github.com/metamessage/metamessage"
+	"github.com/metamessage/web"
 )
-
-// ContentTypeMetaMessage is the Content-Type for MetaMessage binary format.
-const ContentTypeMetaMessage = "application/x-metamessage"
-
-// ContentTypeJSONC is the Content-Type for JSONC format.
-const ContentTypeJSONC = "application/jsonc"
 
 // DecodeConfig configures request body decoding behavior.
 type DecodeConfig struct {
@@ -227,7 +222,7 @@ func MetaMessageEncoder(config *EncodeConfig) gin.HandlerFunc {
 			return
 		}
 
-		c.Data(config.SuccessCode, ContentTypeMetaMessage, encoded)
+		c.Data(config.SuccessCode, web.ContentTypeMetaMessage, encoded)
 	}
 }
 
@@ -255,7 +250,7 @@ func AbortWithMetaMessage(c *gin.Context, code int, obj any) {
 		encoded, _ = mm.EncodeFromValue(fallback, "")
 	}
 	c.Status(code)
-	c.Header("Content-Type", ContentTypeMetaMessage)
+	c.Header("Content-Type", web.ContentTypeMetaMessage)
 	_, _ = c.Writer.Write(encoded)
 	c.Abort()
 }
@@ -272,7 +267,7 @@ func OptionsHandler(obj any) gin.HandlerFunc {
 			})
 			return
 		}
-		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	}
 }
 
@@ -371,7 +366,7 @@ func POST[T any](relativePath string, handler Handler[T]) {
 			return
 		}
 		c.Header("Allow", "POST, OPTIONS")
-		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
@@ -399,7 +394,7 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 			return
 		}
 		c.Header("Allow", "PUT, OPTIONS")
-		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
@@ -427,16 +422,16 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 			return
 		}
 		c.Header("Allow", "PATCH, OPTIONS")
-		c.Data(http.StatusOK, ContentTypeMetaMessage, encoded)
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
 // detectFormat detects the data format from the Content-Type header.
 func detectFormat(contentType string, defaultFormat FormatType) FormatType {
 	switch contentType {
-	case ContentTypeMetaMessage, "application/octet-stream":
+	case web.ContentTypeMetaMessage, "application/octet-stream":
 		return FormatMetaMessage
-	case ContentTypeJSONC, "application/json", "text/plain":
+	case web.ContentTypeJSONC, "application/json", "text/plain":
 		return FormatJSONC
 	default:
 		if defaultFormat != FormatAuto {

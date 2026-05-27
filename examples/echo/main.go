@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/metamessage/mm-web/client"
-	"github.com/metamessage/mm-web/server"
+	"github.com/metamessage/client"
+	server "github.com/metamessage/mmecho"
 )
 
 type User struct {
@@ -64,23 +64,27 @@ var users = []User{
 }
 
 func listUsers(c echo.Context) error {
-	return c.JSON(http.StatusOK, ListUsersResponse{
+	server.Respond(c, ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	})
+	}, "")
+	return nil
 }
 
 func getUser(c echo.Context) error {
 	id := c.Param("id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			return c.JSON(http.StatusOK, APIResponse{Code: 0, Message: "success", Data: &u})
+			server.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
+			return nil
 		}
 	}
-	return c.JSON(http.StatusNotFound, ErrorResponse{Error: "user not found"})
+
+	server.RespondWithStatus(c, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil
 }
 
-func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
+func createUser(r echo.Context, req *CreateUserRequest) (any, error) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -92,8 +96,8 @@ func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
 	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, nil
 }
 
-func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
-	id := r.PathValue("id")
+func updateUser(r echo.Context, req *UpdateUserRequest) (any, error) {
+	id := r.Param("id")
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			if req.Name != nil {
@@ -111,7 +115,8 @@ func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
 			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, nil
 		}
 	}
-	return nil, fmt.Errorf("user not found")
+
+	return ErrorResponse{Error: "user not found"}, nil
 }
 
 func deleteUser(c echo.Context) error {
@@ -119,14 +124,17 @@ func deleteUser(c echo.Context) error {
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			return c.JSON(http.StatusOK, APIResponse{Code: 0, Message: "user deleted"})
+			server.Respond(c, APIResponse{Code: 0, Message: "user deleted"}, "")
+			return nil
 		}
 	}
-	return c.JSON(http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	server.Respond(c, ErrorResponse{Error: "user not found"}, "")
+	return nil
 }
 
 func healthCheck(c echo.Context) error {
-	return c.JSON(http.StatusOK, HealthResponse{Status: "ok"})
+	server.Respond(c, HealthResponse{Status: "ok"}, "")
+	return nil
 }
 
 func runTestsWithPort(port string) {

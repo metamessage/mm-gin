@@ -1,24 +1,23 @@
-# mm-web
+# mm-web-go
 
-Gin framework plugin for MetaMessage protocol, providing encoding/decoding, data binding, schema discovery and generic route registration.
+Provides MetaMessage protocol support for Go web frameworks, including encoding/decoding, data binding, schema discovery and other features. Supports Gin, Echo, Fiber, and Vanilla.
 
 [中文](README.md) | **English** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 ## Features
 
-- **One-line initialization**: `mmgin.Init(r, "/api/v1")` registers middleware and route group at once
-- **Generic route registration**: `mmgin.POST[T](path, handler)` with automatic type-safe request binding
+- **One-line initialization**: `server.Init(r, "/api/v1")` registers middleware and route group at once
+- **Generic route registration**: `server.POST[T](path, handler)` with automatic type-safe request binding
 - **Schema discovery**: POST/PUT/PATCH automatically register OPTIONS for client-side request validation
 - **Request decoding**: Auto-detect and decode JSONC and MetaMessage binary request bodies
 - **Response encoding**: Auto-encode response data into MetaMessage binary format
 - **Data binding**: Support for request body, query parameters, URI parameters, and headers
-- **Custom validation**: Support for struct-level validation via `Validator` interface
 - **HTTP client**: Generic `DoRequest[REQ, RESP]` with schema preflight validation
 
 ## Installation
 
 ```bash
-go get github.com/metamessage/mm-web
+go get github.com/metamessage/mmgin
 ```
 
 ## Quick Start
@@ -30,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-web"
+	server "github.com/metamessage/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -50,11 +49,11 @@ func main() {
     r := gin.Default()
 
     // One-line initialization: middleware + route group
-    mmgin.Init(r, "/api/v1")
+	server.Init(r, "/api/v1")
 
     // Generic route with auto-binding and OPTIONS schema discovery
-    mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-        mmgin.Respond(c, UserResponse{
+	server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+		server.Respond(c, UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
@@ -73,15 +72,15 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-web/client"
+    "github.com/metamessage/client"
 )
 
 func main() {
-    client.SetDefaultClient("http://localhost:8080")
+    client.SetDefaultClient("http://localhost:8080", false)
 
     // Generic request with schema validation
     req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
-    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", &req)
     if err != nil {
         panic(err)
     }
@@ -93,22 +92,11 @@ func main() {
 
 ### Multi-Framework Adapter
 
-Install the unified adapter package:
-
-```bash
-go get github.com/metamessage/mm-web/server
-```
-
-The `server` package provides a unified API through `Init`, which auto-detects the framework type and sets up MetaMessage middleware. **POST/PUT/PATCH handler logic is fully portable across frameworks** — only the framework type and native routing methods change.
-
-```go
-import "github.com/metamessage/mm-web/server"
-```
-
 #### Gin
 
 ```go
 import "github.com/gin-gonic/gin"
+import server "github.com/metamessage/mmgin"
 
 r := gin.Default()
 server.Init(r, "/api/v1")
@@ -131,6 +119,7 @@ server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, err
 
 ```go
 import "github.com/labstack/echo/v4"
+import server "github.com/metamessage/mmecho"
 
 e := echo.New()
 server.Init(e, "/api/v1")
@@ -148,6 +137,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/gofiber/fiber/v2"
+import server "github.com/metamessage/mmfiber"
 
 app := fiber.New()
 server.Init(app, "/api/v1")
@@ -165,6 +155,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/go-chi/chi/v5"
+import server "github.com/metamessage/mmchi"
 
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
@@ -181,6 +172,8 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 #### net/http
 
 ```go
+import server "github.com/metamessage/mmvanilla"
+
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
@@ -506,7 +499,7 @@ The `client` package provides a generic HTTP client for MetaMessage protocol com
 #### Client
 
 ```go
-c := client.NewClient("http://localhost:8080")
+c := client.NewClient("http://localhost:8080", false)
 ```
 
 #### SetDefaultClient
@@ -514,7 +507,7 @@ c := client.NewClient("http://localhost:8080")
 Set a global default client:
 
 ```go
-client.SetDefaultClient("http://localhost:8080")
+client.SetDefaultClient("http://localhost:8080", false)
 ```
 
 #### DoRequest
@@ -609,13 +602,11 @@ The example demonstrates:
 - Server with `Init()` and generic route registration
 - CRUD operations with MetaMessage binary protocol
 - Client with schema validation via OPTIONS preflight
-- Custom validation and error handling
 
 ---
 
 ## Dependencies
 
-- [gin-gonic/gin](https://github.com/gin-gonic/gin) - Web framework
 - [metamessage/metamessage](https://github.com/metamessage/metamessage) - MetaMessage protocol implementation
 
 ## License

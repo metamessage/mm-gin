@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 
-	"github.com/labstack/echo/v4"
+	"github.com/metamessage/web"
+
+	echo "github.com/labstack/echo/v4"
 	mm "github.com/metamessage/metamessage"
-)
-
-const (
-	ContentTypeMetaMessage = "application/x-metamessage"
-	ContentTypeJSONC       = "application/jsonc"
 )
 
 var defaultGroup *echo.Group
@@ -30,7 +26,7 @@ func decoderMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		body, err := io.ReadAll(c.Request().Body)
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "read body failed"})
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "read body failed"})
 		}
 		c.Request().Body = io.NopCloser(bytes.NewReader(body))
 		c.Set("mm_raw_body", body)
@@ -54,7 +50,7 @@ func encoderMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			if s, ok := c.Get("mm_status").(int); ok {
 				status = s
 			}
-			return c.Blob(status, ContentTypeMetaMessage, encoded)
+			return c.Blob(status, web.ContentTypeMetaMessage, encoded)
 		}
 		return err
 	}
@@ -114,24 +110,23 @@ func POST[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.POST(relativePath, func(c echo.Context) error {
 		var req T
 		if err := bind(c, &req); err != nil {
-			return abortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
 		data, err := handler(c, &req)
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		respond(c, data, "")
+		Respond(c, data, "")
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
 		c.Response().Header().Set("Allow", "POST, OPTIONS")
-		return c.Blob(http.StatusOK, ContentTypeMetaMessage, encoded)
+		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
@@ -139,24 +134,23 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.PUT(relativePath, func(c echo.Context) error {
 		var req T
 		if err := bind(c, &req); err != nil {
-			return abortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
 		data, err := handler(c, &req)
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		respond(c, data, "")
+		Respond(c, data, "")
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
 		c.Response().Header().Set("Allow", "PUT, OPTIONS")
-		return c.Blob(http.StatusOK, ContentTypeMetaMessage, encoded)
+		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
@@ -164,24 +158,23 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.PATCH(relativePath, func(c echo.Context) error {
 		var req T
 		if err := bind(c, &req); err != nil {
-			return abortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
 		data, err := handler(c, &req)
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		respond(c, data, "")
+		Respond(c, data, "")
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			return abortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
 		c.Response().Header().Set("Allow", "PATCH, OPTIONS")
-		return c.Blob(http.StatusOK, ContentTypeMetaMessage, encoded)
+		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	})
 }
 
@@ -209,55 +202,21 @@ func isBinaryMetaMessage(data []byte) bool {
 	return c != '{' && c != '[' && c != '"'
 }
 
-func respond(c echo.Context, data any, tag string) {
+func Respond(c echo.Context, data any, tag string) {
 	c.Set("mm_response", data)
 	c.Set("mm_tag", tag)
 }
 
-func respondWithStatus(c echo.Context, code int, data any, tag string) {
+func RespondWithStatus(c echo.Context, code int, data any, tag string) {
 	c.Set("mm_response", data)
 	c.Set("mm_status", code)
 	c.Set("mm_tag", tag)
 }
 
-func abortWithMetaMessage(c echo.Context, code int, obj any) error {
+func AbortWithMetaMessage(c echo.Context, code int, obj any) error {
 	encoded, err := mm.EncodeFromValue(obj, "")
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "encode error")
 	}
-	return c.Blob(code, ContentTypeMetaMessage, encoded)
-}
-
-func initSafeDefaults(obj any) {
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	t := v.Type()
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if !field.CanSet() {
-			continue
-		}
-		tag := t.Field(i).Tag.Get("mm")
-		switch field.Kind() {
-		case reflect.String:
-			if field.String() == "" {
-				field.SetString("x")
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if field.Int() == 0 {
-				field.SetInt(1)
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if field.Uint() == 0 {
-				field.SetUint(1)
-			}
-		case reflect.Float32, reflect.Float64:
-			if field.Float() == 0 {
-				_ = tag
-				field.SetFloat(1)
-			}
-		}
-	}
+	return c.Blob(code, web.ContentTypeMetaMessage, encoded)
 }

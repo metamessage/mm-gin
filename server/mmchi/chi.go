@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/metamessage/web"
+
+	chi "github.com/go-chi/chi/v5"
 	mm "github.com/metamessage/metamessage"
-)
-
-const (
-	ContentTypeMetaMessage = "application/x-metamessage"
-	ContentTypeJSONC       = "application/jsonc"
 )
 
 var defaultGroup chi.Router
@@ -66,7 +62,7 @@ func decoderMiddleware(next http.Handler) http.Handler {
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusBadRequest, mmError{Error: "read body failed"})
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "read body failed"})
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
@@ -89,7 +85,7 @@ func encoderMiddleware(next http.Handler) http.Handler {
 			if code == 0 {
 				code = http.StatusOK
 			}
-			w.Header().Set("Content-Type", ContentTypeMetaMessage)
+			w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 			w.WriteHeader(code)
 			w.Write(encoded)
 			return
@@ -105,7 +101,7 @@ func encoderMiddleware(next http.Handler) http.Handler {
 			if code == 0 {
 				code = http.StatusOK
 			}
-			w.Header().Set("Content-Type", ContentTypeMetaMessage)
+			w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 			w.WriteHeader(code)
 			w.Write(encoded)
 			return
@@ -172,26 +168,25 @@ func POST[T any](relativePath string, handler Handler[T]) {
 	mux.Post(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var req T
 		if err := bind(r, &req); err != nil {
-			abortWithMetaMessage(w, r, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
 		data, err := handler(r, &req)
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		respond(w, r, data, "")
+		Respond(w, data, "")
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: fmt.Sprintf("schema encode failed: %s", err.Error())})
 			return
 		}
 		w.Header().Set("Allow", "POST, OPTIONS")
-		w.Header().Set("Content-Type", ContentTypeMetaMessage)
+		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 		w.WriteHeader(http.StatusOK)
 		w.Write(encoded)
 	})
@@ -202,26 +197,25 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 	mux.Put(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var req T
 		if err := bind(r, &req); err != nil {
-			abortWithMetaMessage(w, r, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
 		data, err := handler(r, &req)
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		respond(w, r, data, "")
+		Respond(w, data, "")
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 			return
 		}
 		w.Header().Set("Allow", "PUT, OPTIONS")
-		w.Header().Set("Content-Type", ContentTypeMetaMessage)
+		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 		w.WriteHeader(http.StatusOK)
 		w.Write(encoded)
 	})
@@ -232,26 +226,25 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 	mux.Patch(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var req T
 		if err := bind(r, &req); err != nil {
-			abortWithMetaMessage(w, r, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
 		data, err := handler(r, &req)
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		respond(w, r, data, "")
+		Respond(w, data, "")
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T
-		initSafeDefaults(&sample)
-		encoded, err := mm.EncodeFromValue(sample, "")
+		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
-			abortWithMetaMessage(w, r, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 			return
 		}
 		w.Header().Set("Allow", "PATCH, OPTIONS")
-		w.Header().Set("Content-Type", ContentTypeMetaMessage)
+		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 		w.WriteHeader(http.StatusOK)
 		w.Write(encoded)
 	})
@@ -278,19 +271,19 @@ func isBinaryMetaMessage(data []byte) bool {
 	return c != '{' && c != '[' && c != '"'
 }
 
-func respond(w http.ResponseWriter, r *http.Request, data any, tag string) {
+func Respond(w http.ResponseWriter, data any, tag string) {
 	if mw, ok := w.(*mmResponseWriter); ok {
 		mw.respond(data, tag)
 	}
 }
 
-func respondWithStatus(w http.ResponseWriter, r *http.Request, code int, data any, tag string) {
+func RespondWithStatus(w http.ResponseWriter, code int, data any, tag string) {
 	if mw, ok := w.(*mmResponseWriter); ok {
 		mw.respondWithStatus(code, data, tag)
 	}
 }
 
-func abortWithMetaMessage(w http.ResponseWriter, r *http.Request, code int, obj any) {
+func AbortWithMetaMessage(w http.ResponseWriter, code int, obj any) {
 	if mw, ok := w.(*mmResponseWriter); ok {
 		mw.abortWithMetaMessage(code, obj)
 		return
@@ -300,41 +293,7 @@ func abortWithMetaMessage(w http.ResponseWriter, r *http.Request, code int, obj 
 		http.Error(w, "encode error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", ContentTypeMetaMessage)
+	w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 	w.WriteHeader(code)
 	w.Write(encoded)
-}
-
-func initSafeDefaults(obj any) {
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	t := v.Type()
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if !field.CanSet() {
-			continue
-		}
-		tag := t.Field(i).Tag.Get("mm")
-		switch field.Kind() {
-		case reflect.String:
-			if field.String() == "" {
-				field.SetString("x")
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if field.Int() == 0 {
-				field.SetInt(1)
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if field.Uint() == 0 {
-				field.SetUint(1)
-			}
-		case reflect.Float32, reflect.Float64:
-			if field.Float() == 0 {
-				_ = tag
-				field.SetFloat(1)
-			}
-		}
-	}
 }

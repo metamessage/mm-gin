@@ -1,24 +1,23 @@
-# mm-web
+# mm-web-go
 
-Gin 프레임워크를 위한 MetaMessage 프로토콜 플러그인으로, 인코딩/디코딩, 데이터 바인딩, 스키마 디스커버리 및 제네릭 라우트 등록을 제공합니다.
+Go 웹 프레임워크에 MetaMessage 프로토콜 지원을 제공하며, 인코딩/디코딩, 데이터 바인딩, 스키마 발견 등의 기능을 포함합니다. Gin, Echo, Fiber, Vanilla를 지원합니다.
 
 [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **한국어**
 
 ## 특징
 
-- **한 줄 초기화**: `mmgin.Init(r, "/api/v1")`으로 미들웨어와 라우트 그룹을 한 번에 등록
-- **제네릭 라우트 등록**: `mmgin.POST[T](path, handler)`로 자동 타입-safe 요청 바인딩
+- **한 줄 초기화**: `server.Init(r, "/api/v1")`으로 미들웨어와 라우트 그룹을 한 번에 등록
+- **제네릭 라우트 등록**: `server.POST[T](path, handler)`로 자동 타입-safe 요청 바인딩
 - **스키마 디스커버리**: POST/PUT/PATCH가 자동으로 OPTIONS를 등록하여 클라이언트 요청 검증
 - **요청 디코딩**: JSONC 및 MetaMessage 바이너리 형식의 요청 본문 자동 감지 및 디코딩
 - **응답 인코딩**: 응답 데이터를 MetaMessage 바이너리 형식으로 자동 인코딩
 - **데이터 바인딩**: 요청 본문, 쿼리 파라미터, URI 파라미터, 헤더 바인딩 지원
-- **커스텀 검증**: `Validator` 인터페이스를 통한 구조체 수준의 검증 지원
 - **HTTP 클라이언트**: 스키마 사전 검증을 지원하는 제네릭 `DoRequest[REQ, RESP]`
 
 ## 설치
 
 ```bash
-go get github.com/metamessage/mm-web
+go get github.com/metamessage/mmgin
 ```
 
 ## 빠른 시작
@@ -30,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    mmgin "github.com/metamessage/mm-web"
+    server "github.com/metamessage/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -50,11 +49,11 @@ func main() {
     r := gin.Default()
 
     // 한 줄 초기화: 미들웨어 + 라우트 그룹
-    mmgin.Init(r, "/api/v1")
+    server.Init(r, "/api/v1")
 
     // 자동 바인딩 및 OPTIONS 스키마 디스커버리가 포함된 제네릭 라우트
-    mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-        mmgin.Respond(c, UserResponse{
+    server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
+        server.Respond(c, UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
@@ -73,15 +72,15 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/mm-web/client"
+    "github.com/metamessage/client"
 )
 
 func main() {
-    client.SetDefaultClient("http://localhost:8080")
+    client.SetDefaultClient("http://localhost:8080", false)
 
     // 스키마 검증이 포함된 제네릭 요청
     req := CreateUserRequest{Name: "Alice", Email: "alice@example.com", Age: 25}
-    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", req)
+    resp, err := client.POST[CreateUserRequest, UserResponse]("/api/v1/users", &req)
     if err != nil {
         panic(err)
     }
@@ -93,22 +92,11 @@ func main() {
 
 ### 멀티 프레임워크 어댑터
 
-통합 어댑터 패키지 설치:
-
-```bash
-go get github.com/metamessage/mm-web/server
-```
-
-`server` 패키지는 통합 API를 제공합니다. `Init`이 프레임워크를 자동 감지하여 MetaMessage 미들웨어를 설정합니다. **POST/PUT/PATCH 핸들러 로직은 프레임워크 간 완전히 이식 가능합니다** — 프레임워크 타입과 네이티브 라우팅 메서드만 변경하면 됩니다.
-
-```go
-import "github.com/metamessage/mm-web/server"
-```
-
 #### Gin
 
 ```go
 import "github.com/gin-gonic/gin"
+import server "github.com/metamessage/mmgin"
 
 r := gin.Default()
 server.Init(r, "/api/v1")
@@ -131,6 +119,7 @@ server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, err
 
 ```go
 import "github.com/labstack/echo/v4"
+import server "github.com/metamessage/mmecho"
 
 e := echo.New()
 server.Init(e, "/api/v1")
@@ -148,6 +137,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/gofiber/fiber/v2"
+import server "github.com/metamessage/mmfiber"
 
 app := fiber.New()
 server.Init(app, "/api/v1")
@@ -165,6 +155,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/go-chi/chi/v5"
+import server "github.com/metamessage/mmchi"
 
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
@@ -181,6 +172,8 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 #### net/http
 
 ```go
+import server "github.com/metamessage/mmvanilla"
+
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
@@ -506,7 +499,7 @@ mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
 #### Client
 
 ```go
-c := client.NewClient("http://localhost:8080")
+c := client.NewClient("http://localhost:8080", false)
 ```
 
 #### SetDefaultClient
@@ -514,7 +507,7 @@ c := client.NewClient("http://localhost:8080")
 전역 기본 클라이언트를 설정합니다:
 
 ```go
-client.SetDefaultClient("http://localhost:8080")
+client.SetDefaultClient("http://localhost:8080", false)
 ```
 
 #### DoRequest
@@ -609,13 +602,11 @@ go run main.go
 - `Init()` 및 제네릭 라우트 등록을 사용한 서버
 - MetaMessage 바이너리 프로토콜을 사용한 CRUD 작업
 - OPTIONS 사전 요청을 통한 스키마 검증을 사용하는 클라이언트
-- 커스텀 검증 및 오류 처리
 
 ---
 
 ## 의존성
 
-- [gin-gonic/gin](https://github.com/gin-gonic/gin) - 웹 프레임워크
 - [metamessage/metamessage](https://github.com/metamessage/metamessage) - MetaMessage 프로토콜 구현
 
 ## 라이선스
