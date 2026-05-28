@@ -20,16 +20,20 @@ type mmError struct {
 
 type mmResponseWriter struct {
 	http.ResponseWriter
-	data       any
-	tag        string
-	code       int
-	statusCode int
-	body       bytes.Buffer
-	aborted    bool
+	data        any
+	tag         string
+	code        int
+	statusCode  int
+	body        bytes.Buffer
+	aborted     bool
+	wroteHeader bool
 }
 
 func (w *mmResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
+	if !w.wroteHeader {
+		w.statusCode = code
+		w.wroteHeader = true
+	}
 }
 
 func (w *mmResponseWriter) Write(b []byte) (int, error) {
@@ -110,39 +114,42 @@ func Init(mux *http.ServeMux, prefix string) {
 
 func GET(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(handlers[0])
+	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc("GET "+fullPath, h)
 }
 
 func HEAD(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(handlers[0])
+	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc("HEAD "+fullPath, h)
 }
 
 func DELETE(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(handlers[0])
+	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc("DELETE "+fullPath, h)
 }
 
 func OPTIONS(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(handlers[0])
+	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc("OPTIONS "+fullPath, h)
 }
 
 func Any(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(handlers[0])
+	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc(fullPath, h)
 }
 
 type Handler[T any] func(r *http.Request, req *T) (data any, err error)
 
-func POST[T any](relativePath string, handler Handler[T]) {
+func registerHandler[T any](method, relativePath string, handler Handler[T]) {
+	if defaultMux == nil {
+		return
+	}
 	fullPath := defaultPrefix + relativePath
-	defaultMux.HandleFunc("POST "+fullPath, func(w http.ResponseWriter, r *http.Request) {
+	defaultMux.HandleFunc(fmt.Sprintf("%s %s", method, fullPath), func(w http.ResponseWriter, r *http.Request) {
 		mw := &mmResponseWriter{ResponseWriter: w}
 		var req T
 		if err := bind(r, &req); err != nil {
@@ -159,85 +166,30 @@ func POST[T any](relativePath string, handler Handler[T]) {
 		mw.respond(data, "")
 		encodeResponse(w, mw)
 	})
-	defaultMux.HandleFunc("OPTIONS "+fullPath, func(w http.ResponseWriter, r *http.Request) {
+	defaultMux.HandleFunc(fmt.Sprintf("%s %s", http.MethodOptions, fullPath), func(w http.ResponseWriter, r *http.Request) {
 		var sample T
 		encoded, err := mm.EncodeFromValue(sample, "example")
 		if err != nil {
 			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 			return
 		}
-		w.Header().Set("Allow", "POST, OPTIONS")
+		w.Header().Set("Allow", fmt.Sprintf("%s, %s", method, http.MethodOptions))
 		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
 		w.WriteHeader(http.StatusOK)
 		w.Write(encoded)
 	})
+}
+
+func POST[T any](relativePath string, handler Handler[T]) {
+	registerHandler(http.MethodPost, relativePath, handler)
 }
 
 func PUT[T any](relativePath string, handler Handler[T]) {
-	fullPath := defaultPrefix + relativePath
-	defaultMux.HandleFunc("PUT "+fullPath, func(w http.ResponseWriter, r *http.Request) {
-		mw := &mmResponseWriter{ResponseWriter: w}
-		var req T
-		if err := bind(r, &req); err != nil {
-			mw.abortWithMetaMessage(http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
-			encodeResponse(w, mw)
-			return
-		}
-		data, err := handler(r, &req)
-		if err != nil {
-			mw.abortWithMetaMessage(http.StatusUnprocessableEntity, mmError{Error: err.Error()})
-			encodeResponse(w, mw)
-			return
-		}
-		mw.respond(data, "")
-		encodeResponse(w, mw)
-	})
-
-	defaultMux.HandleFunc("OPTIONS "+fullPath, func(w http.ResponseWriter, r *http.Request) {
-		var sample T
-		encoded, err := mm.EncodeFromValue(sample, "example")
-		if err != nil {
-			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
-			return
-		}
-		w.Header().Set("Allow", "PUT, OPTIONS")
-		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
-		w.WriteHeader(http.StatusOK)
-		w.Write(encoded)
-	})
+	registerHandler(http.MethodPut, relativePath, handler)
 }
 
 func PATCH[T any](relativePath string, handler Handler[T]) {
-	fullPath := defaultPrefix + relativePath
-	defaultMux.HandleFunc("PATCH "+fullPath, func(w http.ResponseWriter, r *http.Request) {
-		mw := &mmResponseWriter{ResponseWriter: w}
-		var req T
-		if err := bind(r, &req); err != nil {
-			mw.abortWithMetaMessage(http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
-			encodeResponse(w, mw)
-			return
-		}
-		data, err := handler(r, &req)
-		if err != nil {
-			mw.abortWithMetaMessage(http.StatusUnprocessableEntity, mmError{Error: err.Error()})
-			encodeResponse(w, mw)
-			return
-		}
-		mw.respond(data, "")
-		encodeResponse(w, mw)
-	})
-	defaultMux.HandleFunc("OPTIONS "+fullPath, func(w http.ResponseWriter, r *http.Request) {
-		var sample T
-		encoded, err := mm.EncodeFromValue(sample, "example")
-		if err != nil {
-			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
-			return
-		}
-		w.Header().Set("Allow", "PATCH, OPTIONS")
-		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
-		w.WriteHeader(http.StatusOK)
-		w.Write(encoded)
-	})
+	registerHandler(http.MethodPatch, relativePath, handler)
 }
 
 func bind(r *http.Request, obj any) error {
@@ -247,38 +199,22 @@ func bind(r *http.Request, obj any) error {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	if isBinaryMetaMessage(body) {
+	ct := r.Header.Get("Content-Type")
+	switch ct {
+	case web.ContentTypeMetaMessage:
 		return mm.DecodeToValue(body, obj)
+	case web.ContentTypeJSONC:
+		return mm.JsoncToValue(string(body), obj)
+	default:
+		return fmt.Errorf("unsupported Content-Type: %s", ct)
 	}
-	return mm.JsoncToValue(string(body), obj)
-}
-
-func isBinaryMetaMessage(data []byte) bool {
-	if len(data) < 2 {
-		return false
-	}
-	c := data[0]
-	return c != '{' && c != '[' && c != '"'
 }
 
 func chain(handlers []http.HandlerFunc) http.HandlerFunc {
-	if len(handlers) == 0 {
-		return func(w http.ResponseWriter, r *http.Request) {}
-	}
-	if len(handlers) == 1 {
-		return handlers[0]
-	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		var index int
-		var next func()
-		next = func() {
-			if index < len(handlers) {
-				h := handlers[index]
-				index++
-				h(w, r)
-			}
+		for _, h := range handlers {
+			h(w, r)
 		}
-		next()
 	}
 }
 

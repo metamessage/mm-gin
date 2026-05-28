@@ -3,7 +3,7 @@ package web
 const (
 
 	// ContentTypeMetaMessage is the Content-Type for MetaMessage binary format.
-	ContentTypeMetaMessage = "application/x-metamessage"
+	ContentTypeMetaMessage = "application/metamessage"
 
 	// ContentTypeJSONC is the Content-Type for JSONC format.
 	ContentTypeJSONC = "application/jsonc"
