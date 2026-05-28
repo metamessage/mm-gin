@@ -1,4 +1,4 @@
-module github.com/metamessage/mmecho
+module github.com/metamessage/mm-web-go/mmecho
 
 go 1.25.4
 

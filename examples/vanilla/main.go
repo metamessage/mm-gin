@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/metamessage/client"
-	server "github.com/metamessage/mmvanilla"
+	"github.com/metamessage/mm-web-go/client"
+	server "github.com/metamessage/mm-web-go/mmvanilla"
 )
 
 type User struct {

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/metamessage/client"
-	server "github.com/metamessage/mmchi"
+	"github.com/metamessage/mm-web-go/client"
+	server "github.com/metamessage/mm-web-go/mmchi"
 )
 
 type User struct {

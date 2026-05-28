@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/metamessage/client"
-	server "github.com/metamessage/mmgin"
+	"github.com/metamessage/mm-web-go/client"
+	server "github.com/metamessage/mm-web-go/mmgin"
 )
 
 // ============ Shared Types ============

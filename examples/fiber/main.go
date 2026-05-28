@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/metamessage/client"
-	server "github.com/metamessage/mmfiber"
+	"github.com/metamessage/mm-web-go/client"
+	server "github.com/metamessage/mm-web-go/mmfiber"
 )
 
 type User struct {

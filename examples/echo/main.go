@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/metamessage/client"
-	server "github.com/metamessage/mmecho"
+	"github.com/metamessage/mm-web-go/client"
+	server "github.com/metamessage/mm-web-go/mmecho"
 )
 
 type User struct {

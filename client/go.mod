@@ -1,4 +1,4 @@
-module github.com/metamessage/client
+module github.com/metamessage/mm-web-go/client
 
 go 1.25.4
 

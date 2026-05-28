@@ -1,4 +1,4 @@
-module github.com/metamessage/mmfiber
+module github.com/metamessage/mm-web-go/mmfiber
 
 go 1.25.4
 

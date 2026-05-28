@@ -3,10 +3,10 @@ go 1.25.4
 use (
 	./client
 	./examples
-	./server/mmchi
-	./server/mmecho
-	./server/mmfiber
-	./server/mmgin
-	./server/mmvanilla
+	./mmchi
+	./mmecho
+	./mmfiber
+	./mmgin
+	./mmvanilla
 	./web
 )
