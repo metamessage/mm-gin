@@ -1,12 +1,6 @@
 go 1.25.4
 
 use (
-	./client
+	.
 	./examples
-	./mmchi
-	./mmecho
-	./mmfiber
-	./mmgin
-	./mmvanilla
-	./web
 )
