@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/metamessage/web"
+	"github.com/metamessage/mm-web-go/web"
 
 	mm "github.com/metamessage/metamessage"
 )

@@ -1,7 +1,6 @@
 go 1.25.4
 
 use (
-	./web
 	./client
 	./examples
 	./server/mmchi
@@ -9,4 +8,5 @@ use (
 	./server/mmfiber
 	./server/mmgin
 	./server/mmvanilla
+	./web
 )

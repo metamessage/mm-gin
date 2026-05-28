@@ -3,6 +3,6 @@ module github.com/metamessage/mmvanilla
 go 1.25.4
 
 require (
-    github.com/metamessage/metamessage v0.1.18
-    github.com/metamessage/mm-web-go/web v0.1.2
+	github.com/metamessage/metamessage v0.1.18
+	github.com/metamessage/mm-web-go/web v0.1.3
 )

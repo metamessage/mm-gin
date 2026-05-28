@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/labstack/echo/v4 v4.15.2
 	github.com/metamessage/metamessage v0.1.18
-	github.com/metamessage/mm-web-go/web v0.1.2
+	github.com/metamessage/mm-web-go/web v0.1.3
 )
 
 require (
