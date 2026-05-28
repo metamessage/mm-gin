@@ -17,7 +17,7 @@ Go WebフレームワークにMetaMessageプロトコルのサポートを提供
 ## インストール
 
 ```bash
-go get github.com/metamessage/mmgin
+go get github.com/metamessage/mm-web-go
 ```
 
 ## クイックスタート
@@ -29,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-	server "github.com/metamessage/mmgin"
+	server "github.com/metamessage/mm-web-go/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -72,7 +72,7 @@ package main
 
 import (
     "fmt"
-    "github.com/metamessage/client"
+    "github.com/metamessage/mm-web-go/client"
 )
 
 func main() {
@@ -96,7 +96,7 @@ func main() {
 
 ```go
 import "github.com/gin-gonic/gin"
-import server "github.com/metamessage/mmgin"
+import server "github.com/metamessage/mm-web-go/mmgin"
 
 r := gin.Default()
 server.Init(r, "/api/v1")
@@ -119,7 +119,7 @@ server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, err
 
 ```go
 import "github.com/labstack/echo/v4"
-import server "github.com/metamessage/mmecho"
+import server "github.com/metamessage/mm-web-go/mmecho"
 
 e := echo.New()
 server.Init(e, "/api/v1")
@@ -137,7 +137,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/gofiber/fiber/v2"
-import server "github.com/metamessage/mmfiber"
+import server "github.com/metamessage/mm-web-go/mmfiber"
 
 app := fiber.New()
 server.Init(app, "/api/v1")
@@ -155,7 +155,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 
 ```go
 import "github.com/go-chi/chi/v5"
-import server "github.com/metamessage/mmchi"
+import server "github.com/metamessage/mm-web-go/mmchi"
 
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
@@ -172,7 +172,7 @@ server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error)
 #### net/http
 
 ```go
-import server "github.com/metamessage/mmvanilla"
+import server "github.com/metamessage/mm-web-go/mmvanilla"
 
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
@@ -308,7 +308,7 @@ if err := mmgin.Bind(c, &user); err != nil {
 
 ```go
 var user User
-if err := mmgin.BindWithTag(c, &user, "custom_tag"); err != nil {
+if err := mmgin.BindWithTag(c, &user, "desc=user"); err != nil {
     // エラー処理
 }
 ```
@@ -583,7 +583,7 @@ FormatMetaMessage   // MetaMessage バイナリ形式
 ### Content-Type 定数
 
 ```go
-ContentTypeMetaMessage = "application/x-metamessage"
+ContentTypeMetaMessage = "application/metamessage"
 ContentTypeJSONC       = "application/jsonc"
 ```
 
