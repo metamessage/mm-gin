@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/metamessage/web"
+	"github.com/metamessage/mm-web-go/web"
 
 	echo "github.com/labstack/echo/v4"
 	mm "github.com/metamessage/metamessage"

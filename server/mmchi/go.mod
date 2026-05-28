@@ -4,7 +4,7 @@ go 1.25.4
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/metamessage/mm-web-go v0.1.1 // indirect
+	github.com/metamessage/mm-web-go/web v0.1.2 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
 	github.com/google/uuid v1.6.0 // indirect

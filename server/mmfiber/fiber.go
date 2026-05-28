@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/metamessage/web"
+	"github.com/metamessage/mm-web-go/web"
 
 	fiber "github.com/gofiber/fiber/v2"
 	mm "github.com/metamessage/metamessage"

@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	mm "github.com/metamessage/metamessage"
-	"github.com/metamessage/web"
+	"github.com/metamessage/mm-web-go/web"
 )
 
 // BindingError represents a field-level binding error.
