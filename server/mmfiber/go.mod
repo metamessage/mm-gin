@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/metamessage/metamessage v0.1.18
+	github.com/metamessage/mm-web-go v0.1.1
 )
 
 require (

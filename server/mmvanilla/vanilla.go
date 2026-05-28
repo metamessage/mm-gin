@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/metamessage/web"
+	web "github.com/metamessage/mm-web-go"
 
 	mm "github.com/metamessage/metamessage"
 )
