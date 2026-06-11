@@ -295,12 +295,43 @@ func Init(r *gin.Engine, relativePath string) *gin.RouterGroup {
 	return rg
 }
 
-// GET registers a GET route.
-func GET(relativePath string, handlers ...gin.HandlerFunc) {
+// Handler defines a generic handler type with automatic request binding.
+// T is the request struct type; the handler receives a *T pointer.
+// Returns data, tag string, and error; the framework handles Respond/AbortWithMetaMessage.
+type Handler[T any] func(c *gin.Context, req *T) (data any, tag string, err error)
+
+// GET registers a GET route with query parameter binding via MetaMessage.
+func GET[T any](relativePath string, handler Handler[T]) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before GET()")
 	}
-	defaultGroup.GET(relativePath, handlers...)
+	defaultGroup.Handle("GET", relativePath, func(c *gin.Context) {
+		var req T
+		if err := BindQuery(c, &req); err != nil {
+			AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+				Error: "bind failed: " + err.Error(),
+			})
+			return
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(c, data, tag)
+	})
+	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
+			})
+			return
+		}
+		c.Header("Allow", "GET, OPTIONS")
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+	})
 }
 
 // HEAD registers a HEAD route.
@@ -311,12 +342,38 @@ func HEAD(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.HEAD(relativePath, handlers...)
 }
 
-// DELETE registers a DELETE route.
-func DELETE(relativePath string, handlers ...gin.HandlerFunc) {
+// DELETE registers a DELETE route with query parameter binding via MetaMessage.
+func DELETE[T any](relativePath string, handler Handler[T]) {
 	if defaultGroup == nil {
 		panic("mmgin: Init() must be called before DELETE()")
 	}
-	defaultGroup.DELETE(relativePath, handlers...)
+	defaultGroup.Handle("DELETE", relativePath, func(c *gin.Context) {
+		var req T
+		if err := BindQuery(c, &req); err != nil {
+			AbortWithMetaMessage(c, http.StatusBadRequest, mmError{
+				Error: "bind failed: " + err.Error(),
+			})
+			return
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(c, data, tag)
+	})
+	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("failed to encode schema: %s", err.Error()),
+			})
+			return
+		}
+		c.Header("Allow", "DELETE, OPTIONS")
+		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+	})
 }
 
 // OPTIONS registers an OPTIONS route.
@@ -335,10 +392,6 @@ func Any(relativePath string, handlers ...gin.HandlerFunc) {
 	defaultGroup.Any(relativePath, handlers...)
 }
 
-// Handler defines a generic handler type with automatic request binding.
-// T is the request struct type; the handler receives a *T pointer.
-type Handler[T any] func(c *gin.Context, req *T)
-
 // POST registers a POST route with auto-binding and automatically registers
 // an OPTIONS route on the same path for schema discovery.
 // Must be called after Init().
@@ -354,7 +407,12 @@ func POST[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		handler(c, &req)
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(c, data, tag)
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T
@@ -380,9 +438,17 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.Handle("PUT", relativePath, func(c *gin.Context) {
 		var req T
 		if err := MustBindAndValidate(c, &req); err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("binding failed: %s", err.Error()),
+			})
 			return
 		}
-		handler(c, &req)
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(c, data, tag)
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T
@@ -408,9 +474,17 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.Handle("PATCH", relativePath, func(c *gin.Context) {
 		var req T
 		if err := MustBindAndValidate(c, &req); err != nil {
+			AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{
+				Error: fmt.Sprintf("binding failed: %s", err.Error()),
+			})
 			return
 		}
-		handler(c, &req)
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(c, data, tag)
 	})
 	defaultGroup.OPTIONS(relativePath, func(c *gin.Context) {
 		var sample T

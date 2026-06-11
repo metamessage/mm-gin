@@ -1,17 +1,17 @@
 # mm-web-go
 
-Provides MetaMessage protocol support for Go web frameworks, including encoding/decoding, data binding, schema discovery and other features. Supports Gin, Echo, Fiber, and Vanilla.
+Provides MetaMessage protocol support for Go web frameworks, including encoding/decoding, data binding, schema discovery and other features. Supports Gin, Echo, Fiber, Chi, and net/http.
 
 [中文](README.md) | **English** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 ## Features
 
 - **One-line initialization**: `server.Init(r, "/api/v1")` registers middleware and route group at once
-- **Generic route registration**: `server.POST[T](path, handler)` with automatic type-safe request binding
-- **Schema discovery**: POST/PUT/PATCH automatically register OPTIONS for client-side request validation
+- **Generic route registration**: `server.POST[T](path, handler)` with automatic type-safe request binding, `GET`/`DELETE` also supported
+- **Schema discovery**: All generic routes automatically register OPTIONS endpoints for client-side request validation
 - **Request decoding**: Auto-detect and decode JSONC and MetaMessage binary request bodies
 - **Response encoding**: Auto-encode response data into MetaMessage binary format
-- **Data binding**: Support for request body, query parameters, URI parameters, and headers
+- **Query parameter binding**: GET/DELETE bind MetaMessage data via `?data=<hex>` query parameter
 - **HTTP client**: Generic `DoRequest[REQ, RESP]` with schema preflight validation
 
 ## Installation
@@ -29,7 +29,7 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-	server "github.com/metamessage/mm-web-go/mmgin"
+    server "github.com/metamessage/mm-web-go/mmgin"
 )
 
 type CreateUserRequest struct {
@@ -49,16 +49,16 @@ func main() {
     r := gin.Default()
 
     // One-line initialization: middleware + route group
-	server.Init(r, "/api/v1")
+    server.Init(r, "/api/v1")
 
     // Generic route with auto-binding and OPTIONS schema discovery
-	server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-		server.Respond(c, UserResponse{
+    server.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+        return UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
             Age:   req.Age,
-        }, "")
+        }, "", nil
     })
 
     r.Run(":8080")
@@ -90,7 +90,9 @@ func main() {
 
 ---
 
-### Multi-Framework Adapter
+## Multi-Framework Adapter
+
+All frameworks provide **a unified generic route registration API** with the handler signature `func(ctx, *T) (any, string, error)`.
 
 #### Gin
 
@@ -101,17 +103,21 @@ import server "github.com/metamessage/mm-web-go/mmgin"
 r := gin.Default()
 server.Init(r, "/api/v1")
 
-// Use Gin's native API for GET/DELETE etc.
-r.GET("/users", listUsers)
-r.GET("/users/:id", getUser)
-r.DELETE("/users/:id", deleteUser)
-
-// Use unified generic API for POST/PUT/PATCH (auto-bind + OPTIONS schema discovery)
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+// Generic routes: auto-bind + OPTIONS schema discovery
+server.GET("/users", func(c *gin.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
 })
-server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
-	return APIResponse{Message: "updated"}, nil
+server.GET("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
+server.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
+})
+server.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
+server.DELETE("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
 })
 ```
 
@@ -124,12 +130,11 @@ import server "github.com/metamessage/mm-web-go/mmecho"
 e := echo.New()
 server.Init(e, "/api/v1")
 
-// Echo native API
-e.GET("/users", listUsers)
-
-// Same generic handler, framework-agnostic
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(c echo.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(c echo.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -142,12 +147,11 @@ import server "github.com/metamessage/mm-web-go/mmfiber"
 app := fiber.New()
 server.Init(app, "/api/v1")
 
-// Fiber native API
-app.Get("/users", listUsers)
-
-// Same generic handler
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(c *fiber.Ctx, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(c *fiber.Ctx, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -160,12 +164,11 @@ import server "github.com/metamessage/mm-web-go/mmchi"
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
 
-// Chi native API
-r.Get("/users", listUsers)
-
-// Same generic handler
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(r *http.Request, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -177,24 +180,15 @@ import server "github.com/metamessage/mm-web-go/mmvanilla"
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
-// Standard library native API
-mux.HandleFunc("/api/v1/users", listUsers)
-
-// Same generic handler
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(r *http.Request, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
-> Framework-specific routes like `GET`, `HEAD`, `DELETE` can also be registered through `server.GET()`, `server.DELETE()` etc. These accept native handler types for the active framework.
-
-```go
-server.GET("/users", listUsers)
-server.DELETE("/users/:id", deleteUser)
-server.HEAD("/health", healthCheck)
-server.OPTIONS("/resources", optionsHandler)
-server.Any("/catch-all", catchAllHandler)
-```
+> Non-generic routes (like `HEAD`/`OPTIONS`/`Any`) can also be registered via `server.HEAD()`, `server.OPTIONS()`, `server.Any()` package-level functions, using native handler types.
 
 ---
 
@@ -204,7 +198,7 @@ server.Any("/catch-all", catchAllHandler)
 
 #### Init
 
-`Init` registers `MetaMessageDecoder` and `MetaMessageEncoder` middleware, creates a route group, and sets it as the default for all subsequent route registrations.
+`Init` registers decoding and encoding middleware, creates a route group, and sets it as the default for all subsequent route registrations.
 
 ```go
 rg := mmgin.Init(r, "/api/v1")
@@ -215,212 +209,47 @@ rg := mmgin.Init(r, "/api/v1")
 
 ### Route Registration
 
-#### GET / HEAD / DELETE / OPTIONS / Any
+#### Generic GET / DELETE
 
-Standard route registration for methods without auto-binding:
+Generic route registration with automatic query parameter binding and OPTIONS schema discovery. Request data is passed via the `?data=<hex>` query parameter as MetaMessage-encoded data.
 
 ```go
-mmgin.GET("/users", listUsers)
-mmgin.GET("/users/:id", getUser)
-mmgin.DELETE("/users/:id", deleteUser)
-mmgin.HEAD("/health", healthCheck)
-mmgin.OPTIONS("/resources", optionsHandler)
-mmgin.Any("/catch-all", catchAllHandler)
+// Handler[T] definition: func(c *gin.Context, req *T) (any, string, error)
+type Handler[T any] func(c *gin.Context, req *T) (data any, tag string, err error)
+
+mmgin.GET("/users", func(c *gin.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+
+mmgin.DELETE("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
 ```
 
 #### Generic POST / PUT / PATCH
 
-Generic route registration with automatic request binding and OPTIONS schema discovery:
+Generic route registration with automatic request body binding and OPTIONS schema discovery:
 
 ```go
-// Handler[T any] definition: func(c *gin.Context, req *T)
-type Handler[T any] func(c *gin.Context, req *T)
-
-mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-    // req is auto-bound and validated
-    mmgin.Respond(c, UserResponse{...}, "")
+mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 
-mmgin.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) {
-    mmgin.Respond(c, APIResponse{...}, "")
+mmgin.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) (any, string, error) {
+    return APIResponse{...}, "", nil
 })
 ```
 
-Each POST/PUT/PATCH route automatically registers an OPTIONS endpoint on the same path. Clients can send OPTIONS requests to discover the request struct schema (encoded as MetaMessage binary).
+Each generic route automatically registers an OPTIONS endpoint on the same path. Clients can send OPTIONS requests to discover the request struct schema (encoded as MetaMessage binary).
 
----
+#### HEAD / OPTIONS / Any
 
-### Middleware
-
-#### MetaMessageDecoder
-
-Request body decoding middleware supporting JSONC and MetaMessage binary formats.
+Standard route registration for methods without auto-binding, using native handler types:
 
 ```go
-// Default configuration
-r.Use(mmgin.MetaMessageDecoder(nil))
-
-// Custom configuration
-config := &mmgin.DecodeConfig{
-    AllowJSONC:       true,
-    AllowMetaMessage: true,
-    DefaultFormat:    mmgin.FormatAuto,
-    MaxBodySize:      10 << 20, // 10MB
-}
-r.Use(mmgin.MetaMessageDecoder(config))
-```
-
-#### MetaMessageEncoder
-
-Response encoding middleware that encodes handler response data into MetaMessage binary format.
-
-```go
-// Default configuration
-r.Use(mmgin.MetaMessageEncoder(nil))
-
-// Custom configuration
-config := &mmgin.EncodeConfig{
-    DefaultFormat: mmgin.FormatMetaMessage,
-    AutoNegotiate: false,
-    SuccessCode:   http.StatusOK,
-}
-r.Use(mmgin.MetaMessageEncoder(config))
-```
-
----
-
-### Data Binding
-
-#### Bind
-
-Bind request body to a struct (auto-detects format):
-
-```go
-var user User
-if err := mmgin.Bind(c, &user); err != nil {
-    // Handle error
-}
-```
-
-#### BindWithTag
-
-Bind request body using a specified mm tag:
-
-```go
-var user User
-if err := mmgin.BindWithTag(c, &user, "desc=user"); err != nil {
-    // Handle error
-}
-```
-
-#### MustBind
-
-Bind and automatically return a 400 error response on failure:
-
-```go
-var user User
-if err := mmgin.MustBind(c, &user); err != nil {
-    return // Error response already sent
-}
-```
-
-#### ShouldBind / ShouldBindWithTag
-
-Non-panicking variants that return errors instead of aborting:
-
-```go
-var user User
-if err := mmgin.ShouldBind(c, &user); err != nil {
-    // Handle error manually
-}
-```
-
-#### BindQuery
-
-Bind query parameters to a struct:
-
-```go
-var filter Filter
-if err := mmgin.BindQuery(c, &filter); err != nil {
-    // Handle error
-}
-```
-
-#### BindHeader
-
-Bind request headers to a struct:
-
-```go
-var headers Headers
-if err := mmgin.BindHeader(c, &headers); err != nil {
-    // Handle error
-}
-```
-
-#### BindUri
-
-Bind URI parameters to a struct:
-
-```go
-var params Params
-if err := mmgin.BindUri(c, &params); err != nil {
-    // Handle error
-}
-```
-
-#### AutoBind
-
-Automatically bind from all sources with priority: URI params > query params > request body:
-
-```go
-var req Request
-if err := mmgin.AutoBind(c, &req); err != nil {
-    // Handle error
-}
-```
-
----
-
-### Data Validation
-
-#### Validator Interface
-
-Implement the `Validator` interface for custom validation logic:
-
-```go
-type CreateUserRequest struct {
-    Name string `mm:"desc=User name"`
-    Age  uint8  `mm:"desc=Age"`
-}
-
-func (r *CreateUserRequest) Validate() error {
-    if r.Age < 18 {
-        return fmt.Errorf("user must be at least 18 years old")
-    }
-    return nil
-}
-```
-
-#### BindAndValidate
-
-Bind and validate data:
-
-```go
-var req CreateUserRequest
-if err := mmgin.BindAndValidate(c, &req); err != nil {
-    // Handle error
-}
-```
-
-#### MustBindAndValidate
-
-Bind and validate, automatically returning an error response on failure:
-
-```go
-var req CreateUserRequest
-if err := mmgin.MustBindAndValidate(c, &req); err != nil {
-    return // Error response already sent
-}
+mmgin.HEAD("/health", healthCheck)
+mmgin.OPTIONS("/resources", optionsHandler)
+mmgin.Any("/catch-all", catchAllHandler)
 ```
 
 ---
@@ -448,30 +277,6 @@ mmgin.RespondWithStatus(c, http.StatusCreated, APIResponse{
 }, "")
 ```
 
-#### SetMMResponse
-
-Set response data directly (compatible with gin's JSON method style):
-
-```go
-mmgin.SetMMResponse(c, http.StatusOK, data)
-```
-
-#### JSONC
-
-Return a JSONC-format response directly:
-
-```go
-mmgin.JSONC(c, http.StatusOK, data)
-```
-
-#### MetaMessage
-
-Return a MetaMessage binary-format response directly:
-
-```go
-mmgin.MetaMessage(c, http.StatusOK, data)
-```
-
 #### AbortWithMetaMessage
 
 Send a MetaMessage-format error response and abort the request:
@@ -482,12 +287,70 @@ mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{
 })
 ```
 
-#### OptionsHandler
+---
 
-Create a handler for OPTIONS requests (schema discovery):
+### Data Binding
+
+#### Bind
+
+Bind request body to a struct (auto-detects format):
 
 ```go
-mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
+var user User
+if err := mmgin.Bind(c, &user); err != nil {
+    // Handle error
+}
+```
+
+#### BindQuery
+
+Bind query parameters to a struct (reads MetaMessage-encoded data from `?data=<hex>`):
+
+```go
+var filter Filter
+if err := mmgin.BindQuery(c, &filter); err != nil {
+    // Handle error
+}
+```
+
+#### ShouldBind / ShouldBindWithTag
+
+Non-panicking variants that return errors instead of aborting:
+
+```go
+var user User
+if err := mmgin.ShouldBind(c, &user); err != nil {
+    // Handle error manually
+}
+```
+
+#### MustBindAndValidate
+
+Bind and validate, automatically returning an error response on failure:
+
+```go
+var req CreateUserRequest
+if err := mmgin.MustBindAndValidate(c, &req); err != nil {
+    return // Error response already sent
+}
+```
+
+#### Validator Interface
+
+Implement the `Validator` interface for custom validation logic:
+
+```go
+type CreateUserRequest struct {
+    Name string `mm:"desc=User name"`
+    Age  uint8  `mm:"desc=Age"`
+}
+
+func (r *CreateUserRequest) Validate() error {
+    if r.Age < 18 {
+        return fmt.Errorf("user must be at least 18 years old")
+    }
+    return nil
+}
 ```
 
 ---
@@ -512,7 +375,7 @@ client.SetDefaultClient("http://localhost:8080", false)
 
 #### DoRequest
 
-Generic request execution with type-safe request/response. For POST/PUT/PATCH, automatically sends an OPTIONS preflight to validate the request schema:
+Generic request execution with type-safe request/response. Automatically sends an OPTIONS preflight to validate the request schema:
 
 ```go
 resp, err := client.DoRequest[CreateUserRequest, UserResponse](
@@ -536,7 +399,7 @@ client.PATCH[UpdateUserRequest, APIResponse]("/api/v1/users/1", req)
 
 ### Schema Discovery
 
-POST/PUT/PATCH routes on the server automatically register an OPTIONS endpoint for schema discovery. The OPTIONS response returns a MetaMessage-encoded struct instance containing full type, constraint, and description metadata.
+Generic routes (GET/POST/PUT/DELETE/PATCH) on the server automatically register an OPTIONS endpoint for schema discovery. The OPTIONS response returns a MetaMessage-encoded struct instance containing full type, constraint, and description metadata.
 
 The client automatically uses this mechanism for request validation before sending the actual request:
 
@@ -553,53 +416,18 @@ Client                          Server
 
 ---
 
-## Configuration
-
-### DecodeConfig
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| AllowJSONC | bool | true | Enable JSONC format request parsing |
-| AllowMetaMessage | bool | true | Enable MetaMessage binary format request parsing |
-| DefaultFormat | FormatType | FormatAuto | Default parsing format when Content-Type is unavailable |
-| MaxBodySize | int64 | 10MB | Maximum request body size (0 = unlimited) |
-
-### EncodeConfig
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| DefaultFormat | FormatType | FormatMetaMessage | Default response encoding format |
-| AutoNegotiate | bool | false | Auto-select format based on Accept header |
-| SuccessCode | int | 200 | HTTP status code for successful responses |
-
-### FormatType
-
-```go
-FormatAuto          // Auto-detect
-FormatJSONC         // JSONC format
-FormatMetaMessage   // MetaMessage binary format
-```
-
-### Content-Type Constants
-
-```go
-ContentTypeMetaMessage = "application/metamessage"
-ContentTypeJSONC       = "application/jsonc"
-```
-
----
-
 ## Examples
 
 See [examples](examples/) for a complete server + client example.
 
 ```bash
-cd examples
+cd examples/gin    # or echo / fiber / chi / vanilla
 go run main.go
 ```
 
 The example demonstrates:
 - Server with `Init()` and generic route registration
+- GET/DELETE passing request data via `?data=<hex>` query parameter
 - CRUD operations with MetaMessage binary protocol
 - Client with schema validation via OPTIONS preflight
 

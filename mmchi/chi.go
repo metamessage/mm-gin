@@ -2,6 +2,7 @@ package mmchi
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -126,11 +127,45 @@ func Init(r chi.Router, relativePath string) chi.Router {
 	return rg
 }
 
-func GET(relativePath string, handlers ...http.HandlerFunc) {
-	if len(handlers) == 0 {
-		return
+func bindQuery(r *http.Request, obj any) error {
+	dataHex := r.URL.Query().Get("data")
+	if dataHex == "" {
+		return nil
 	}
-	defaultGroup.Get(relativePath, handlers[0])
+	binData, err := hex.DecodeString(dataHex)
+	if err != nil {
+		return fmt.Errorf("invalid hex string")
+	}
+	return mm.DecodeToValue(binData, obj)
+}
+
+func GET[T any](relativePath string, handler Handler[T]) {
+	mux := defaultGroup.(chi.Router)
+	mux.Get(relativePath, func(w http.ResponseWriter, r *http.Request) {
+		var req T
+		if err := bindQuery(r, &req); err != nil {
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			return
+		}
+		data, tag, err := handler(r, &req)
+		if err != nil {
+			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(w, data, tag)
+	})
+	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: fmt.Sprintf("schema encode failed: %s", err.Error())})
+			return
+		}
+		w.Header().Set("Allow", "GET, OPTIONS")
+		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
+		w.WriteHeader(http.StatusOK)
+		w.Write(encoded)
+	})
 }
 
 func HEAD(relativePath string, handlers ...http.HandlerFunc) {
@@ -140,11 +175,33 @@ func HEAD(relativePath string, handlers ...http.HandlerFunc) {
 	defaultGroup.Head(relativePath, handlers[0])
 }
 
-func DELETE(relativePath string, handlers ...http.HandlerFunc) {
-	if len(handlers) == 0 {
-		return
-	}
-	defaultGroup.Delete(relativePath, handlers[0])
+func DELETE[T any](relativePath string, handler Handler[T]) {
+	mux := defaultGroup.(chi.Router)
+	mux.Delete(relativePath, func(w http.ResponseWriter, r *http.Request) {
+		var req T
+		if err := bindQuery(r, &req); err != nil {
+			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+			return
+		}
+		data, tag, err := handler(r, &req)
+		if err != nil {
+			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+			return
+		}
+		Respond(w, data, tag)
+	})
+	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+			return
+		}
+		w.Header().Set("Allow", "DELETE, OPTIONS")
+		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
+		w.WriteHeader(http.StatusOK)
+		w.Write(encoded)
+	})
 }
 
 func OPTIONS(relativePath string, handlers ...http.HandlerFunc) {
@@ -161,7 +218,7 @@ func Any(relativePath string, handlers ...http.HandlerFunc) {
 	defaultGroup.Handle(relativePath, handlers[0])
 }
 
-type Handler[T any] func(r *http.Request, req *T) (data any, err error)
+type Handler[T any] func(r *http.Request, req *T) (data any, tag string, err error)
 
 func POST[T any](relativePath string, handler Handler[T]) {
 	mux := defaultGroup.(chi.Router)
@@ -171,12 +228,12 @@ func POST[T any](relativePath string, handler Handler[T]) {
 			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
-		data, err := handler(r, &req)
+		data, tag, err := handler(r, &req)
 		if err != nil {
 			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		Respond(w, data, "")
+		Respond(w, data, tag)
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T
@@ -200,12 +257,12 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
-		data, err := handler(r, &req)
+		data, tag, err := handler(r, &req)
 		if err != nil {
 			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		Respond(w, data, "")
+		Respond(w, data, tag)
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T
@@ -229,12 +286,12 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 			AbortWithMetaMessage(w, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 			return
 		}
-		data, err := handler(r, &req)
+		data, tag, err := handler(r, &req)
 		if err != nil {
 			AbortWithMetaMessage(w, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			return
 		}
-		Respond(w, data, "")
+		Respond(w, data, tag)
 	})
 	mux.Options(relativePath, func(w http.ResponseWriter, r *http.Request) {
 		var sample T

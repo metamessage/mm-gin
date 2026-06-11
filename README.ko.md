@@ -1,17 +1,17 @@
 # mm-web-go
 
-Go 웹 프레임워크에 MetaMessage 프로토콜 지원을 제공하며, 인코딩/디코딩, 데이터 바인딩, 스키마 발견 등의 기능을 포함합니다. Gin, Echo, Fiber, Vanilla를 지원합니다.
+Go 웹 프레임워크에 MetaMessage 프로토콜 지원을 제공하며, 인코딩/디코딩, 데이터 바인딩, 스키마 발견 등의 기능을 포함합니다. Gin, Echo, Fiber, Chi, net/http를 지원합니다.
 
 [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **한국어**
 
 ## 특징
 
 - **한 줄 초기화**: `server.Init(r, "/api/v1")`으로 미들웨어와 라우트 그룹을 한 번에 등록
-- **제네릭 라우트 등록**: `server.POST[T](path, handler)`로 자동 타입-safe 요청 바인딩
-- **스키마 디스커버리**: POST/PUT/PATCH가 자동으로 OPTIONS를 등록하여 클라이언트 요청 검증
+- **제네릭 라우트 등록**: `server.POST[T](path, handler)`로 자동 타입-safe 요청 바인딩, `GET`/`DELETE`도 지원
+- **스키마 디스커버리**: 모든 제네릭 라우트가 자동으로 OPTIONS 엔드포인트를 등록하여 클라이언트 요청 검증
 - **요청 디코딩**: JSONC 및 MetaMessage 바이너리 형식의 요청 본문 자동 감지 및 디코딩
 - **응답 인코딩**: 응답 데이터를 MetaMessage 바이너리 형식으로 자동 인코딩
-- **데이터 바인딩**: 요청 본문, 쿼리 파라미터, URI 파라미터, 헤더 바인딩 지원
+- **쿼리 파라미터 바인딩**: GET/DELETE는 `?data=<hex>` 쿼리 파라미터로 MetaMessage 데이터 바인딩
 - **HTTP 클라이언트**: 스키마 사전 검증을 지원하는 제네릭 `DoRequest[REQ, RESP]`
 
 ## 설치
@@ -52,13 +52,13 @@ func main() {
     server.Init(r, "/api/v1")
 
     // 자동 바인딩 및 OPTIONS 스키마 디스커버리가 포함된 제네릭 라우트
-    server.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-        server.Respond(c, UserResponse{
+    server.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+        return UserResponse{
             ID:    1,
             Name:  req.Name,
             Email: req.Email,
             Age:   req.Age,
-        }, "")
+        }, "", nil
     })
 
     r.Run(":8080")
@@ -90,7 +90,9 @@ func main() {
 
 ---
 
-### 멀티 프레임워크 어댑터
+## 멀티 프레임워크 어댑터
+
+모든 프레임워크가 **통일된 제네릭 라우트 등록 API**를 제공하며, 핸들러 시그니처는 `func(ctx, *T) (any, string, error)`입니다.
 
 #### Gin
 
@@ -101,17 +103,21 @@ import server "github.com/metamessage/mm-web-go/mmgin"
 r := gin.Default()
 server.Init(r, "/api/v1")
 
-// Gin 네이티브 API로 GET/DELETE 등 등록
-r.GET("/users", listUsers)
-r.GET("/users/:id", getUser)
-r.DELETE("/users/:id", deleteUser)
-
-// 통합 제네릭 API로 POST/PUT/PATCH 등록 (자동 바인딩 + OPTIONS 스키마 디스커버리)
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+// 제네릭 라우트: 자동 바인딩 + OPTIONS 스키마 디스커버리
+server.GET("/users", func(c *gin.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
 })
-server.PUT("/users/:id", func(r *http.Request, req *UpdateUserRequest) (any, error) {
-	return APIResponse{Message: "updated"}, nil
+server.GET("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
+server.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
+})
+server.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
+server.DELETE("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
 })
 ```
 
@@ -124,12 +130,11 @@ import server "github.com/metamessage/mm-web-go/mmecho"
 e := echo.New()
 server.Init(e, "/api/v1")
 
-// Echo 네이티브 API
-e.GET("/users", listUsers)
-
-// 동일 제네릭 핸들러, 프레임워크 비종속
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(c echo.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(c echo.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -142,12 +147,11 @@ import server "github.com/metamessage/mm-web-go/mmfiber"
 app := fiber.New()
 server.Init(app, "/api/v1")
 
-// Fiber 네이티브 API
-app.Get("/users", listUsers)
-
-// 동일 제네릭 핸들러
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(c *fiber.Ctx, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(c *fiber.Ctx, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -160,12 +164,11 @@ import server "github.com/metamessage/mm-web-go/mmchi"
 r := chi.NewRouter()
 server.Init(r, "/api/v1")
 
-// Chi 네이티브 API
-r.Get("/users", listUsers)
-
-// 동일 제네릭 핸들러
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(r *http.Request, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
@@ -177,24 +180,15 @@ import server "github.com/metamessage/mm-web-go/mmvanilla"
 mux := http.NewServeMux()
 server.Init(mux, "/api/v1")
 
-// 표준 라이브러리 네이티브 API
-mux.HandleFunc("/api/v1/users", listUsers)
-
-// 동일 제네릭 핸들러
-server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, error) {
-	return UserResponse{ID: 1, Name: req.Name, Email: req.Email, Age: req.Age}, nil
+server.GET("/users", func(r *http.Request, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+server.POST("/users", func(r *http.Request, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 ```
 
-> 프레임워크 특화 `GET`, `HEAD`, `DELETE` 등의 라우트도 `server.GET()`, `server.DELETE()` 등의 패키지 레벨 함수로 등록할 수 있습니다. 활성 프레임워크의 네이티브 핸들러 타입을 받습니다.
-
-```go
-server.GET("/users", listUsers)
-server.DELETE("/users/:id", deleteUser)
-server.HEAD("/health", healthCheck)
-server.OPTIONS("/resources", optionsHandler)
-server.Any("/catch-all", catchAllHandler)
-```
+> 비제네릭 라우트（`HEAD`/`OPTIONS`/`Any` 등）도 `server.HEAD()`、`server.OPTIONS()`、`server.Any()` 패키지 레벨 함수로 등록할 수 있습니다. 각 프레임워크의 네이티브 핸들러 타입을 사용합니다.
 
 ---
 
@@ -204,7 +198,7 @@ server.Any("/catch-all", catchAllHandler)
 
 #### Init
 
-`Init`은 `MetaMessageDecoder`와 `MetaMessageEncoder` 미들웨어를 등록하고, 라우트 그룹을 생성한 후 모든 후속 라우트 등록의 기본값으로 설정합니다.
+`Init`은 디코딩 및 인코딩 미들웨어를 등록하고, 라우트 그룹을 생성한 후 모든 후속 라우트 등록의 기본값으로 설정합니다.
 
 ```go
 rg := mmgin.Init(r, "/api/v1")
@@ -215,212 +209,47 @@ rg := mmgin.Init(r, "/api/v1")
 
 ### 라우트 등록
 
-#### GET / HEAD / DELETE / OPTIONS / Any
+#### 제네릭 GET / DELETE
 
-자동 바인딩이 필요하지 않은 메서드의 표준 라우트 등록:
+자동 쿼리 파라미터 바인딩과 OPTIONS 스키마 디스커버리가 포함된 제네릭 라우트 등록. `?data=<hex>` 쿼리 파라미터를 통해 MetaMessage 인코딩된 요청 데이터를 전달합니다.
 
 ```go
-mmgin.GET("/users", listUsers)
-mmgin.GET("/users/:id", getUser)
-mmgin.DELETE("/users/:id", deleteUser)
-mmgin.HEAD("/health", healthCheck)
-mmgin.OPTIONS("/resources", optionsHandler)
-mmgin.Any("/catch-all", catchAllHandler)
+// Handler[T] 정의: func(c *gin.Context, req *T) (any, string, error)
+type Handler[T any] func(c *gin.Context, req *T) (data any, tag string, err error)
+
+mmgin.GET("/users", func(c *gin.Context, req *any) (any, string, error) {
+    return ListUsersResponse{...}, "", nil
+})
+
+mmgin.DELETE("/users/:id", func(c *gin.Context, req *any) (any, string, error) {
+    return APIResponse{...}, "", nil
+})
 ```
 
 #### 제네릭 POST / PUT / PATCH
 
-자동 요청 바인딩 및 OPTIONS 스키마 디스커버리가 포함된 제네릭 라우트 등록:
+자동 요청 본문 바인딩과 OPTIONS 스키마 디스커버리가 포함된 제네릭 라우트 등록:
 
 ```go
-// Handler[T any] 정의: func(c *gin.Context, req *T)
-type Handler[T any] func(c *gin.Context, req *T)
-
-mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) {
-    // req는 자동으로 바인딩 및 검증됩니다
-    mmgin.Respond(c, UserResponse{...}, "")
+mmgin.POST("/users", func(c *gin.Context, req *CreateUserRequest) (any, string, error) {
+    return UserResponse{...}, "", nil
 })
 
-mmgin.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) {
-    mmgin.Respond(c, APIResponse{...}, "")
+mmgin.PUT("/users/:id", func(c *gin.Context, req *UpdateUserRequest) (any, string, error) {
+    return APIResponse{...}, "", nil
 })
 ```
 
-각 POST/PUT/PATCH 라우트는 동일한 경로에 OPTIONS 엔드포인트를 자동으로 등록합니다. 클라이언트는 OPTIONS 요청을 보내 요청 구조체 스키마(MetaMessage 바이너리로 인코딩됨)를 확인할 수 있습니다.
+각 제네릭 라우트는 동일한 경로에 OPTIONS 엔드포인트를 자동으로 등록합니다. 클라이언트는 OPTIONS 요청을 보내 요청 구조체 스키마(MetaMessage 바이너리로 인코딩됨)를 확인할 수 있습니다.
 
----
+#### HEAD / OPTIONS / Any
 
-### 미들웨어
-
-#### MetaMessageDecoder
-
-JSONC 및 MetaMessage 바이너리 형식을 지원하는 요청 본문 디코딩 미들웨어.
+자동 바인딩이 필요하지 않은 메서드의 표준 라우트 등록. 각 프레임워크의 네이티브 핸들러 타입 사용:
 
 ```go
-// 기본 설정 사용
-r.Use(mmgin.MetaMessageDecoder(nil))
-
-// 사용자 정의 설정
-config := &mmgin.DecodeConfig{
-    AllowJSONC:       true,
-    AllowMetaMessage: true,
-    DefaultFormat:    mmgin.FormatAuto,
-    MaxBodySize:      10 << 20, // 10MB
-}
-r.Use(mmgin.MetaMessageDecoder(config))
-```
-
-#### MetaMessageEncoder
-
-핸들러 응답 데이터를 MetaMessage 바이너리 형식으로 인코딩하는 응답 인코딩 미들웨어.
-
-```go
-// 기본 설정 사용
-r.Use(mmgin.MetaMessageEncoder(nil))
-
-// 사용자 정의 설정
-config := &mmgin.EncodeConfig{
-    DefaultFormat: mmgin.FormatMetaMessage,
-    AutoNegotiate: false,
-    SuccessCode:   http.StatusOK,
-}
-r.Use(mmgin.MetaMessageEncoder(config))
-```
-
----
-
-### 데이터 바인딩
-
-#### Bind
-
-요청 본문을 구조체에 바인딩합니다 (형식 자동 감지):
-
-```go
-var user User
-if err := mmgin.Bind(c, &user); err != nil {
-    // 오류 처리
-}
-```
-
-#### BindWithTag
-
-지정된 mm 태그를 사용하여 요청 본문을 바인딩합니다:
-
-```go
-var user User
-if err := mmgin.BindWithTag(c, &user, "desc=user"); err != nil {
-    // 오류 처리
-}
-```
-
-#### MustBind
-
-바인딩하고, 실패 시 자동으로 400 오류 응답을 반환합니다:
-
-```go
-var user User
-if err := mmgin.MustBind(c, &user); err != nil {
-    return // 오류 응답이 이미 전송됨
-}
-```
-
-#### ShouldBind / ShouldBindWithTag
-
-중단 대신 오류를 반환하는 비중단 변형:
-
-```go
-var user User
-if err := mmgin.ShouldBind(c, &user); err != nil {
-    // 수동으로 오류 처리
-}
-```
-
-#### BindQuery
-
-쿼리 파라미터를 구조체에 바인딩합니다:
-
-```go
-var filter Filter
-if err := mmgin.BindQuery(c, &filter); err != nil {
-    // 오류 처리
-}
-```
-
-#### BindHeader
-
-요청 헤더를 구조체에 바인딩합니다:
-
-```go
-var headers Headers
-if err := mmgin.BindHeader(c, &headers); err != nil {
-    // 오류 처리
-}
-```
-
-#### BindUri
-
-URI 파라미터를 구조체에 바인딩합니다:
-
-```go
-var params Params
-if err := mmgin.BindUri(c, &params); err != nil {
-    // 오류 처리
-}
-```
-
-#### AutoBind
-
-모든 소스에서 자동으로 바인딩합니다 (우선순위: URI 파라미터 > 쿼리 파라미터 > 요청 본문):
-
-```go
-var req Request
-if err := mmgin.AutoBind(c, &req); err != nil {
-    // 오류 처리
-}
-```
-
----
-
-### 데이터 검증
-
-#### Validator 인터페이스
-
-커스텀 검증 로직을 위해 `Validator` 인터페이스를 구현합니다:
-
-```go
-type CreateUserRequest struct {
-    Name string `mm:"desc=User name"`
-    Age  uint8  `mm:"desc=Age"`
-}
-
-func (r *CreateUserRequest) Validate() error {
-    if r.Age < 18 {
-        return fmt.Errorf("user must be at least 18 years old")
-    }
-    return nil
-}
-```
-
-#### BindAndValidate
-
-데이터를 바인딩하고 검증합니다:
-
-```go
-var req CreateUserRequest
-if err := mmgin.BindAndValidate(c, &req); err != nil {
-    // 오류 처리
-}
-```
-
-#### MustBindAndValidate
-
-바인딩 및 검증 후, 실패 시 자동으로 오류 응답을 반환합니다:
-
-```go
-var req CreateUserRequest
-if err := mmgin.MustBindAndValidate(c, &req); err != nil {
-    return // 오류 응답이 이미 전송됨
-}
+mmgin.HEAD("/health", healthCheck)
+mmgin.OPTIONS("/resources", optionsHandler)
+mmgin.Any("/catch-all", catchAllHandler)
 ```
 
 ---
@@ -448,30 +277,6 @@ mmgin.RespondWithStatus(c, http.StatusCreated, APIResponse{
 }, "")
 ```
 
-#### SetMMResponse
-
-응답 데이터를 직접 설정합니다 (gin의 JSON 메서드 스타일과 호환):
-
-```go
-mmgin.SetMMResponse(c, http.StatusOK, data)
-```
-
-#### JSONC
-
-JSONC 형식의 응답을 직접 반환합니다:
-
-```go
-mmgin.JSONC(c, http.StatusOK, data)
-```
-
-#### MetaMessage
-
-MetaMessage 바이너리 형식의 응답을 직접 반환합니다:
-
-```go
-mmgin.MetaMessage(c, http.StatusOK, data)
-```
-
 #### AbortWithMetaMessage
 
 MetaMessage 형식의 오류 응답을 보내고 요청을 중단합니다:
@@ -482,12 +287,70 @@ mmgin.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{
 })
 ```
 
-#### OptionsHandler
+---
 
-OPTIONS 요청용 핸들러를 생성합니다 (스키마 디스커버리):
+### 데이터 바인딩
+
+#### Bind
+
+요청 본문을 구조체에 바인딩합니다 (형식 자동 감지):
 
 ```go
-mmgin.OPTIONS("/users", mmgin.OptionsHandler(CreateUserRequest{}))
+var user User
+if err := mmgin.Bind(c, &user); err != nil {
+    // 오류 처리
+}
+```
+
+#### BindQuery
+
+쿼리 파라미터를 구조체에 바인딩합니다 (`?data=<hex>`에서 MetaMessage 인코딩 데이터 읽기):
+
+```go
+var filter Filter
+if err := mmgin.BindQuery(c, &filter); err != nil {
+    // 오류 처리
+}
+```
+
+#### ShouldBind / ShouldBindWithTag
+
+중단 대신 오류를 반환하는 비중단 변형:
+
+```go
+var user User
+if err := mmgin.ShouldBind(c, &user); err != nil {
+    // 수동으로 오류 처리
+}
+```
+
+#### MustBindAndValidate
+
+바인딩 및 검증 후, 실패 시 자동으로 오류 응답을 반환합니다:
+
+```go
+var req CreateUserRequest
+if err := mmgin.MustBindAndValidate(c, &req); err != nil {
+    return // 오류 응답이 이미 전송됨
+}
+```
+
+#### Validator 인터페이스
+
+커스텀 검증 로직을 위해 `Validator` 인터페이스를 구현합니다:
+
+```go
+type CreateUserRequest struct {
+    Name string `mm:"desc=User name"`
+    Age  uint8  `mm:"desc=Age"`
+}
+
+func (r *CreateUserRequest) Validate() error {
+    if r.Age < 18 {
+        return fmt.Errorf("user must be at least 18 years old")
+    }
+    return nil
+}
 ```
 
 ---
@@ -512,7 +375,7 @@ client.SetDefaultClient("http://localhost:8080", false)
 
 #### DoRequest
 
-타입-safe 요청/응답을 사용한 제네릭 요청 실행. POST/PUT/PATCH의 경우 요청 스키마를 검증하기 위해 OPTIONS 사전 요청을 자동으로 보냅니다:
+타입-safe 요청/응답을 사용한 제네릭 요청 실행. 자동으로 OPTIONS 사전 요청을 보내 스키마를 검증합니다:
 
 ```go
 resp, err := client.DoRequest[CreateUserRequest, UserResponse](
@@ -536,7 +399,7 @@ client.PATCH[UpdateUserRequest, APIResponse]("/api/v1/users/1", req)
 
 ### 스키마 디스커버리
 
-서버의 POST/PUT/PATCH 라우트는 스키마 디스커버리를 위해 OPTIONS 엔드포인트를 자동으로 등록합니다. OPTIONS 응답은 전체 타입, 제약 조건 및 설명 메타데이터가 포함된 MetaMessage 인코딩 구조체 인스턴스를 반환합니다.
+서버의 제네릭 라우트(GET/POST/PUT/DELETE/PATCH)는 스키마 디스커버리를 위해 OPTIONS 엔드포인트를 자동으로 등록합니다. OPTIONS 응답은 전체 타입, 제약 조건 및 설명 메타데이터가 포함된 MetaMessage 인코딩 구조체 인스턴스를 반환합니다.
 
 클라이언트는 실제 요청을 보내기 전에 이 메커니즘을 자동으로 사용하여 요청을 검증합니다:
 
@@ -553,53 +416,19 @@ client.PATCH[UpdateUserRequest, APIResponse]("/api/v1/users/1", req)
 
 ---
 
-## 설정
-
-### DecodeConfig
-
-| 필드 | 타입 | 기본값 | 설명 |
-|-------|------|---------|-------------|
-| AllowJSONC | bool | true | JSONC 형식 요청 파싱 활성화 |
-| AllowMetaMessage | bool | true | MetaMessage 바이너리 형식 요청 파싱 활성화 |
-| DefaultFormat | FormatType | FormatAuto | Content-Type을 확인할 수 없을 때의 기본 파싱 형식 |
-| MaxBodySize | int64 | 10MB | 최대 요청 본문 크기 (0 = 제한 없음) |
-
-### EncodeConfig
-
-| 필드 | 타입 | 기본값 | 설명 |
-|-------|------|---------|-------------|
-| DefaultFormat | FormatType | FormatMetaMessage | 기본 응답 인코딩 형식 |
-| AutoNegotiate | bool | false | Accept 헤더 기반 형식 자동 선택 |
-| SuccessCode | int | 200 | 성공 응답의 HTTP 상태 코드 |
-
-### FormatType
-
-```go
-FormatAuto          // 자동 감지
-FormatJSONC         // JSONC 형식
-FormatMetaMessage   // MetaMessage 바이너리 형식
-```
-
-### Content-Type 상수
-
-```go
-ContentTypeMetaMessage = "application/metamessage"
-ContentTypeJSONC       = "application/jsonc"
-```
-
----
-
 ## 예제
 
 완전한 서버 + 클라이언트 예제는 [examples](examples/)를 참조하세요.
 
 ```bash
-cd examples
+cd examples/gin    # 또는 echo / fiber / chi / vanilla
 go run main.go
 ```
 
 이 예제는 다음을 보여줍니다:
+
 - `Init()` 및 제네릭 라우트 등록을 사용한 서버
+- GET/DELETE가 `?data=<hex>` 쿼리 파라미터로 요청 데이터를 전달하는 방법
 - MetaMessage 바이너리 프로토콜을 사용한 CRUD 작업
 - OPTIONS 사전 요청을 통한 스키마 검증을 사용하는 클라이언트
 

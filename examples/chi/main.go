@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -63,25 +64,24 @@ var users = []User{
 	{ID: 3, Name: "Charlie", Email: "charlie@example.com", Age: 35, IsActive: false},
 }
 
-func listUsers(w http.ResponseWriter, r *http.Request) {
-	server.Respond(w, ListUsersResponse{
+func listUsers(r *http.Request, req *any) (any, string, error) {
+	return ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	}, "")
+	}, "", nil
 }
 
-func getUser(w http.ResponseWriter, r *http.Request) {
+func getUser(r *http.Request, req *any) (any, string, error) {
 	id := chi.URLParam(r, "id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			server.Respond(w, APIResponse{Code: 0, Message: "success", Data: &u}, "")
-			return
+			return APIResponse{Code: 0, Message: "success", Data: &u}, "", nil
 		}
 	}
-	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
+func createUser(r *http.Request, req *CreateUserRequest) (any, string, error) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -90,10 +90,10 @@ func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
 		IsActive: true,
 	}
 	users = append(users, newUser)
-	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, nil
+	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, "", nil
 }
 
-func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
+func updateUser(r *http.Request, req *UpdateUserRequest) (any, string, error) {
 	id := chi.URLParam(r, "id")
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
@@ -109,34 +109,33 @@ func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
 			if req.IsActive != nil {
 				users[i].IsActive = *req.IsActive
 			}
-			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, nil
+			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "", nil
 		}
 	}
-	return nil, fmt.Errorf("user not found")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func deleteUser(w http.ResponseWriter, r *http.Request) {
+func deleteUser(r *http.Request, req *any) (any, string, error) {
 	id := chi.URLParam(r, "id")
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			server.Respond(w, APIResponse{Code: 0, Message: "user deleted"}, "")
-			return
+			return APIResponse{Code: 0, Message: "user deleted"}, "", nil
 		}
 	}
-	server.Respond(w, ErrorResponse{Error: "user not found"}, "")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	server.Respond(w, HealthResponse{Status: "ok"}, "")
+func healthCheck(r *http.Request, req *any) (any, string, error) {
+	return HealthResponse{Status: "ok"}, "", nil
 }
 
 func runTestsWithPort(port string) {
 	baseURL := fmt.Sprintf("http://localhost:%s", port)
 
-	fmt.Println("\n" + "=" + repeat("=", 60))
+	fmt.Println(repeat("=", 100))
 	fmt.Println("[Test] CRUD with MetaMessage binary protocol (Chi)...")
-	fmt.Println(repeat("=", 61) + "[]")
+	fmt.Println(repeat("=", 100))
 
 	client.SetDefaultClient(baseURL, true)
 
@@ -151,8 +150,9 @@ func runTestsWithPort(port string) {
 		fmt.Printf("     - ID: %d, Name: %s, Email: %s, Age: %d\n", u.ID, u.Name, u.Email, u.Age)
 	}
 
-	fmt.Println("\n  [GET] /api/v1/users/1")
-	resp2, err := client.GET[any, APIResponse]("/api/v1/users/1", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [GET] /api/v1/user/1")
+	resp2, err := client.GET[any, APIResponse]("/api/v1/user/1", nil)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -160,13 +160,14 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp2.Message)
 	fmt.Printf("     User: %+v\n", resp2.Data)
 
-	fmt.Println("\n  [POST] /api/v1/users")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [POST] /api/v1/user/create")
 	createReq := &CreateUserRequest2{
 		Name:  "David",
 		Email: "david@example.com",
 		Age:   28,
 	}
-	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/users", createReq)
+	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/user/create", createReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -174,10 +175,11 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp3.Message)
 	fmt.Printf("     New User: %+v\n", resp3.Data)
 
-	fmt.Println("\n  [PUT] /api/v1/users/1")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [PUT] /api/v1/user/update/1")
 	name := "Alice Updated"
 	updateReq := &UpdateUserRequest{Name: &name}
-	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", updateReq)
+	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/user/update/1", updateReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -185,14 +187,16 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp4.Message)
 	fmt.Printf("     Updated User: %+v\n", resp4.Data)
 
-	fmt.Println("\n  [DELETE] /api/v1/users/3")
-	resp5, err := client.DELETE[any, APIResponse]("/api/v1/users/3", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [DELETE] /api/v1/user/delete/3")
+	resp5, err := client.DELETE[any, APIResponse]("/api/v1/user/delete/3", nil)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
 	fmt.Printf("  [OK] Message: %s\n", resp5.Message)
 
+	fmt.Println(repeat("=", 100))
 	fmt.Println("\n  [HealthCheck] /api/v1/health")
 	resp6, err := client.GET[any, HealthResponse]("/api/v1/health", nil)
 	if err != nil {
@@ -203,11 +207,13 @@ func runTestsWithPort(port string) {
 }
 
 func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
+	var sb strings.Builder
+	sb.Grow(len(s) * n)
+
+	for range n {
+		sb.WriteString(s)
 	}
-	return result
+	return sb.String()
 }
 
 func main() {
@@ -215,12 +221,12 @@ func main() {
 
 	server.Init(r, "/api/v1")
 
-	r.Get("/api/v1/users", listUsers)
-	r.Get("/api/v1/users/{id}", getUser)
-	server.POST("/users", createUser)
-	server.PUT("/users/{id}", updateUser)
-	r.Delete("/api/v1/users/{id}", deleteUser)
-	r.Get("/api/v1/health", healthCheck)
+	server.GET("/users", listUsers)
+	server.GET("/user/{id}", getUser)
+	server.POST("/user/create", createUser)
+	server.PUT("/user/update/{id}", updateUser)
+	server.DELETE("/user/delete/{id}", deleteUser)
+	server.GET("/health", healthCheck)
 
 	go func() {
 		addr := ":8080"

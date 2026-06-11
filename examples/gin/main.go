@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +12,7 @@ import (
 	server "github.com/metamessage/mm-web-go/mmgin"
 )
 
-// ============ Shared Types ============
+// go run ./examples/gin/main.go
 
 // User represents a user entity.
 // Native Go types are auto-inferred; no type tag needed.
@@ -38,14 +38,6 @@ type CreateUserRequest2 struct {
 	Email string `mm:"type=email; desc=電子郵箱"`
 	Age   uint8  `mm:"desc=年齡; min=0; max=150"`
 }
-
-// Validate performs custom validation for CreateUserRequest.
-// func (r *CreateUserRequest) Validate() error {
-// 	if r.Age < 18 {
-// 		return fmt.Errorf("user must be at least 18 years old")
-// 	}
-// 	return nil
-// }
 
 // UpdateUserRequest is the request struct for updating a user.
 type UpdateUserRequest struct {
@@ -104,20 +96,19 @@ func runServer(port string) *gin.Engine {
 	server.Init(r, "/api/v1")
 
 	// API routes
-	// POST/PUT generic functions auto-bind requests and register OPTIONS schema discovery.
+	// GET/DELETE generic functions auto-bind query params and register OPTIONS schema discovery.
+	// POST/PUT generic functions auto-bind request bodies and register OPTIONS schema discovery.
 	{
 		// Data endpoints
 		server.GET("/users", listUsers)
-		server.GET("/users/:id", getUser)
-		server.POST("/users", createUser)
-		server.PUT("/users/:id", updateUser)
-		server.DELETE("/users/:id", deleteUser)
+		server.GET("/user/:id", getUser)
+		server.POST("/user/create", createUser)
+		server.PUT("/user/update/:id", updateUser)
+		server.DELETE("/user/delete/:id", deleteUser)
 	}
 
 	// Health check
-	r.GET("/api/v1/health", func(c *gin.Context) {
-		server.Respond(c, HealthResponse{Status: "ok"}, "desc=健康檢查響應")
-	})
+	server.GET("/health", healthCheck)
 
 	go func() {
 		addr := ":" + port
@@ -136,25 +127,24 @@ var users = []User{
 	{ID: 3, Name: "Charlie", Email: "charlie@example.com", Age: 35, IsActive: false},
 }
 
-func listUsers(c *gin.Context) {
-	server.Respond(c, ListUsersResponse{
+func listUsers(c *gin.Context, req *any) (any, string, error) {
+	return ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	}, "desc=用戶列表響應")
+	}, "", nil
 }
 
-func getUser(c *gin.Context) {
+func getUser(c *gin.Context, req *any) (any, string, error) {
 	id := c.Param("id")
 	for _, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
-			server.Respond(c, APIResponse{Code: 0, Message: "success", Data: &u}, "")
-			return
+			return APIResponse{Code: 0, Message: "success", Data: &u}, "", nil
 		}
 	}
-	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func createUser(c *gin.Context, req *CreateUserRequest) {
+func createUser(c *gin.Context, req *CreateUserRequest) (any, string, error) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -164,14 +154,14 @@ func createUser(c *gin.Context, req *CreateUserRequest) {
 	}
 	users = append(users, newUser)
 
-	server.RespondWithStatus(c, http.StatusCreated, APIResponse{
+	return APIResponse{
 		Code:    0,
 		Message: "user created",
 		Data:    &newUser,
-	}, "")
+	}, "", nil
 }
 
-func updateUser(c *gin.Context, req *UpdateUserRequest) {
+func updateUser(c *gin.Context, req *UpdateUserRequest) (any, string, error) {
 	id := c.Param("id")
 
 	for i, u := range users {
@@ -189,23 +179,25 @@ func updateUser(c *gin.Context, req *UpdateUserRequest) {
 				users[i].IsActive = *req.IsActive
 			}
 
-			server.Respond(c, APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "")
-			return
+			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "", nil
 		}
 	}
-	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func deleteUser(c *gin.Context) {
+func deleteUser(c *gin.Context, req *any) (any, string, error) {
 	id := c.Param("id")
 	for i, u := range users {
 		if fmt.Sprintf("%d", u.ID) == id {
 			users = append(users[:i], users[i+1:]...)
-			server.Respond(c, APIResponse{Code: 0, Message: "user deleted", Data: nil}, "")
-			return
+			return APIResponse{Code: 0, Message: "user deleted", Data: nil}, "", nil
 		}
 	}
-	server.AbortWithMetaMessage(c, http.StatusNotFound, ErrorResponse{Error: "user not found"})
+	return nil, "", fmt.Errorf("user not found")
+}
+
+func healthCheck(c *gin.Context, req *any) (any, string, error) {
+	return HealthResponse{Status: "ok"}, "", nil
 }
 
 // ============ Test / Client Example ============
@@ -213,9 +205,9 @@ func deleteUser(c *gin.Context) {
 func runTestsWithPort(port string) {
 	baseURL := fmt.Sprintf("http://localhost:%s", port)
 
-	fmt.Println("\n" + "=" + repeat("=", 60))
+	fmt.Println(repeat("=", 100))
 	fmt.Println("[Test] CRUD with MetaMessage binary protocol...")
-	fmt.Println(repeat("=", 61) + "[]")
+	fmt.Println(repeat("=", 100))
 
 	client.SetDefaultClient(baseURL, true) // Set global default client for convenience
 
@@ -232,8 +224,9 @@ func runTestsWithPort(port string) {
 	}
 
 	// Get single user
-	fmt.Println("\n  [GET] /api/v1/users/1")
-	resp2, err := client.GET[any, APIResponse]("/api/v1/users/1", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [GET] /api/v1/user/1")
+	resp2, err := client.GET[any, APIResponse]("/api/v1/user/1", nil)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -242,13 +235,14 @@ func runTestsWithPort(port string) {
 	fmt.Printf("     User: %+v\n", resp2.Data)
 
 	// Create user
-	fmt.Println("\n  [POST] /api/v1/users")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [POST] /api/v1/user/create")
 	createReq := &CreateUserRequest2{
 		Name:  "David",
 		Email: "david@example.com",
 		Age:   28,
 	}
-	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/users", createReq)
+	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/user/create", createReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -257,12 +251,13 @@ func runTestsWithPort(port string) {
 	fmt.Printf("     New User: %+v\n", resp3.Data)
 
 	// Update user
-	fmt.Println("\n  [PUT] /api/v1/users/1")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [PUT] /api/v1/user/update/1")
 	name := "Alice Updated"
 	updateReq := &UpdateUserRequest{
 		Name: &name,
 	}
-	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", updateReq)
+	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/user/update/1", updateReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -271,8 +266,9 @@ func runTestsWithPort(port string) {
 	fmt.Printf("     Updated User: %+v\n", resp4.Data)
 
 	// Delete user
-	fmt.Println("\n  [DELETE] /api/v1/users/3")
-	resp5, err := client.DELETE[any, APIResponse]("/api/v1/users/3", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [DELETE] /api/v1/user/delete/3")
+	resp5, err := client.DELETE[any, APIResponse]("/api/v1/user/delete/3", nil)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -280,6 +276,7 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp5.Message)
 
 	// Health check
+	fmt.Println(repeat("=", 100))
 	fmt.Println("\n  [HealthCheck] /api/v1/health")
 	resp6, err := client.GET[any, HealthResponse]("/api/v1/health", nil)
 	if err != nil {
@@ -290,11 +287,13 @@ func runTestsWithPort(port string) {
 }
 
 func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
+	var sb strings.Builder
+	sb.Grow(len(s) * n)
+
+	for range n {
+		sb.WriteString(s)
 	}
-	return result
+	return sb.String()
 }
 
 // ============ Main ============

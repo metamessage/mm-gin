@@ -132,9 +132,7 @@ func Any(relativePath string, handlers ...http.HandlerFunc) {
 	defaultMux.HandleFunc(fullPath, h)
 }
 
-type Handler[T any] func(r *http.Request, req *T) (data any, err error)
-
-type HandlerWithoutReq func(r *http.Request) (data any, err error)
+type Handler[T any] func(r *http.Request, req *T) (data any, tag string, err error)
 
 func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 	if defaultMux == nil {
@@ -160,13 +158,13 @@ func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 			}
 		}
 
-		data, err := handler(r, &req)
+		data, tag, err := handler(r, &req)
 		if err != nil {
 			mw.abortWithMetaMessage(http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 			encodeResponse(w, mw)
 			return
 		}
-		mw.respond(data, "")
+		mw.respond(data, tag)
 		encodeResponse(w, mw)
 	})
 	defaultMux.HandleFunc(fmt.Sprintf("%s %s", http.MethodOptions, fullPath), func(w http.ResponseWriter, r *http.Request) {

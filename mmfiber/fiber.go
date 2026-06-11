@@ -1,6 +1,7 @@
 package mmfiber
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/http"
 
@@ -36,16 +37,70 @@ func Init(app *fiber.App, relativePath string) fiber.Router {
 	return g
 }
 
-func GET(relativePath string, handlers ...fiber.Handler) {
-	defaultGroup.Get(relativePath, handlers...)
+func bindQuery(c *fiber.Ctx, obj any) error {
+	dataHex := c.Query("data")
+	if dataHex == "" {
+		return nil
+	}
+	binData, err := hex.DecodeString(dataHex)
+	if err != nil {
+		return fmt.Errorf("invalid hex string")
+	}
+	return mm.DecodeToValue(binData, obj)
+}
+
+func GET[T any](relativePath string, handler Handler[T]) {
+	defaultGroup.Get(relativePath, func(c *fiber.Ctx) error {
+		var req T
+		if err := bindQuery(c, &req); err != nil {
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+		}
+		Respond(c, data, tag)
+		return nil
+	})
+	defaultGroup.Options(relativePath, func(c *fiber.Ctx) error {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+		}
+		c.Set("Allow", "GET, OPTIONS")
+		c.Set("Content-Type", web.ContentTypeMetaMessage)
+		return c.Status(http.StatusOK).Send(encoded)
+	})
+}
+
+func DELETE[T any](relativePath string, handler Handler[T]) {
+	defaultGroup.Delete(relativePath, func(c *fiber.Ctx) error {
+		var req T
+		if err := bindQuery(c, &req); err != nil {
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+		}
+		Respond(c, data, tag)
+		return nil
+	})
+	defaultGroup.Options(relativePath, func(c *fiber.Ctx) error {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+		}
+		c.Set("Allow", "DELETE, OPTIONS")
+		c.Set("Content-Type", web.ContentTypeMetaMessage)
+		return c.Status(http.StatusOK).Send(encoded)
+	})
 }
 
 func HEAD(relativePath string, handlers ...fiber.Handler) {
 	defaultGroup.Head(relativePath, handlers...)
-}
-
-func DELETE(relativePath string, handlers ...fiber.Handler) {
-	defaultGroup.Delete(relativePath, handlers...)
 }
 
 func OPTIONS(relativePath string, handlers ...fiber.Handler) {
@@ -56,7 +111,7 @@ func Any(relativePath string, handlers ...fiber.Handler) {
 	defaultGroup.All(relativePath, handlers...)
 }
 
-type Handler[T any] func(c *fiber.Ctx, req *T) (data any, err error)
+type Handler[T any] func(c *fiber.Ctx, req *T) (data any, tag string, err error)
 
 func POST[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.Post(relativePath, func(c *fiber.Ctx) error {
@@ -64,11 +119,11 @@ func POST[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.Options(relativePath, func(c *fiber.Ctx) error {
@@ -89,11 +144,11 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.Options(relativePath, func(c *fiber.Ctx) error {
@@ -114,11 +169,11 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.Options(relativePath, func(c *fiber.Ctx) error {

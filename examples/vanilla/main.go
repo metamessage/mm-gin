@@ -65,27 +65,27 @@ var users = []User{
 	{ID: 3, Name: "Charlie", Email: "charlie@example.com", Age: 35, IsActive: false},
 }
 
-func listUsers(r *http.Request, _ *any) (any, error) {
+func listUsers(r *http.Request, _ *any) (any, string, error) {
 	return ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	}, nil
+	}, "", nil
 }
 
-func getUser(r *http.Request, u *User) (any, error) {
+func getUser(r *http.Request, u *User) (any, string, error) {
 	fmt.Printf("url: %v\n", r.RequestURI)
 	fmt.Printf("user: %+v\n", *u)
 	idStr := r.PathValue("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for _, u := range users {
 		if u.ID == id {
-			return APIResponse{Code: 0, Message: "success", Data: &u}, nil
+			return APIResponse{Code: 0, Message: "success", Data: &u}, "", nil
 		}
 	}
-	return nil, fmt.Errorf("user not found")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
+func createUser(r *http.Request, req *CreateUserRequest) (any, string, error) {
 	newUser := User{
 		ID:       int64(len(users) + 1),
 		Name:     req.Name,
@@ -94,10 +94,10 @@ func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
 		IsActive: true,
 	}
 	users = append(users, newUser)
-	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, nil
+	return APIResponse{Code: 0, Message: "user created", Data: &newUser}, "", nil
 }
 
-func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
+func updateUser(r *http.Request, req *UpdateUserRequest) (any, string, error) {
 	idStr := r.PathValue("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for i, u := range users {
@@ -114,26 +114,26 @@ func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
 			if req.IsActive != nil {
 				users[i].IsActive = *req.IsActive
 			}
-			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, nil
+			return APIResponse{Code: 0, Message: "user updated", Data: &users[i]}, "", nil
 		}
 	}
-	return nil, fmt.Errorf("user not found")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func deleteUser(r *http.Request, _ *any) (any, error) {
+func deleteUser(r *http.Request, _ *any) (any, string, error) {
 	idStr := r.PathValue("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for i, u := range users {
 		if u.ID == id {
 			users = append(users[:i], users[i+1:]...)
-			return APIResponse{Code: 0, Message: "user deleted"}, nil
+			return APIResponse{Code: 0, Message: "user deleted"}, "", nil
 		}
 	}
-	return nil, fmt.Errorf("user not found")
+	return nil, "", fmt.Errorf("user not found")
 }
 
-func healthCheck(r *http.Request, _ *any) (any, error) {
-	return HealthResponse{Status: "ok"}, nil
+func healthCheck(r *http.Request, _ *any) (any, string, error) {
+	return HealthResponse{Status: "ok"}, "", nil
 }
 
 func runTestsWithPort(port string) {

@@ -1,6 +1,7 @@
 package mmgin
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -63,25 +64,17 @@ func MustBindWithTag(c *gin.Context, obj any, tag string) error {
 }
 
 // BindQuery binds query parameters to the struct.
-// Converts query params to JSONC format and parses via MetaMessage.
+// Reads hex-encoded MetaMessage data from the "data" query parameter.
 func BindQuery(c *gin.Context, obj any) error {
-	// Convert query params to map
-	queryMap := make(map[string]any)
-	for key, values := range c.Request.URL.Query() {
-		if len(values) == 1 {
-			queryMap[key] = values[0]
-		} else {
-			queryMap[key] = values
-		}
+	dataHex := c.Query("data")
+	if dataHex == "" {
+		return nil
 	}
-
-	// Encode map via MetaMessage and decode into target struct
-	data, err := mm.EncodeFromValue(queryMap, "")
+	binData, err := hex.DecodeString(dataHex)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid hex string")
 	}
-
-	return mm.DecodeToValue(data, obj)
+	return mm.DecodeToValue(binData, obj)
 }
 
 // BindHeader binds request headers to the struct.

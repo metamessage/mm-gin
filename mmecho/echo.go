@@ -2,6 +2,7 @@ package mmecho
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,12 +65,40 @@ func Init(e *echo.Echo, relativePath string) *echo.Group {
 	return g
 }
 
-func GET(relativePath string, handlers ...echo.HandlerFunc) {
-	if len(handlers) == 0 {
-		return
+func bindQuery(c echo.Context, obj any) error {
+	dataHex := c.QueryParam("data")
+	if dataHex == "" {
+		return nil
 	}
-	h := handlers[0]
-	defaultGroup.GET(relativePath, h)
+	binData, err := hex.DecodeString(dataHex)
+	if err != nil {
+		return fmt.Errorf("invalid hex string")
+	}
+	return mm.DecodeToValue(binData, obj)
+}
+
+func GET[T any](relativePath string, handler Handler[T]) {
+	defaultGroup.GET(relativePath, func(c echo.Context) error {
+		var req T
+		if err := bindQuery(c, &req); err != nil {
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+		}
+		Respond(c, data, tag)
+		return nil
+	})
+	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+		}
+		c.Response().Header().Set("Allow", "GET, OPTIONS")
+		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+	})
 }
 
 func HEAD(relativePath string, handlers ...echo.HandlerFunc) {
@@ -80,12 +109,28 @@ func HEAD(relativePath string, handlers ...echo.HandlerFunc) {
 	defaultGroup.HEAD(relativePath, h)
 }
 
-func DELETE(relativePath string, handlers ...echo.HandlerFunc) {
-	if len(handlers) == 0 {
-		return
-	}
-	h := handlers[0]
-	defaultGroup.DELETE(relativePath, h)
+func DELETE[T any](relativePath string, handler Handler[T]) {
+	defaultGroup.DELETE(relativePath, func(c echo.Context) error {
+		var req T
+		if err := bindQuery(c, &req); err != nil {
+			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+		}
+		data, tag, err := handler(c, &req)
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
+		}
+		Respond(c, data, tag)
+		return nil
+	})
+	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
+		var sample T
+		encoded, err := mm.EncodeFromValue(sample, "example")
+		if err != nil {
+			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
+		}
+		c.Response().Header().Set("Allow", "DELETE, OPTIONS")
+		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+	})
 }
 
 func OPTIONS(relativePath string, handlers ...echo.HandlerFunc) {
@@ -104,7 +149,7 @@ func Any(relativePath string, handlers ...echo.HandlerFunc) {
 	defaultGroup.Any(relativePath, h)
 }
 
-type Handler[T any] func(c echo.Context, req *T) (data any, err error)
+type Handler[T any] func(c echo.Context, req *T) (data any, tag string, err error)
 
 func POST[T any](relativePath string, handler Handler[T]) {
 	defaultGroup.POST(relativePath, func(c echo.Context) error {
@@ -112,11 +157,11 @@ func POST[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
@@ -136,11 +181,11 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
@@ -160,11 +205,11 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 		if err := bind(c, &req); err != nil {
 			return AbortWithMetaMessage(c, http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
 		}
-		data, err := handler(c, &req)
+		data, tag, err := handler(c, &req)
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusUnprocessableEntity, mmError{Error: err.Error()})
 		}
-		Respond(c, data, "")
+		Respond(c, data, tag)
 		return nil
 	})
 	defaultGroup.OPTIONS(relativePath, func(c echo.Context) error {
