@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/labstack/echo/v4 v4.15.2
-	github.com/metamessage/metamessage v0.1.18
+	github.com/metamessage/metamessage v0.2.3
 )
 
 require (

@@ -2,9 +2,11 @@ package client
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/metamessage/mm-web-go/web"
@@ -46,35 +48,66 @@ var defaultClient = NewClient("", false)
 // the expected format before sending the actual request.
 // For GET/DELETE/OPTIONS (bodyless methods), specify T as any.
 func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (resp RESP, err error) {
-	shouldEncode := method == "POST" || method == "PUT" || method == "PATCH"
-
-	if shouldEncode {
-		if _, err = DoRequest[any, REQ](c, "OPTIONS", path, nil); err != nil {
+	var reqBody io.Reader
+	var query string
+	var contentType string
+	if slices.Contains([]string{http.MethodGet, http.MethodDelete}, method) {
+		if _, err = DoRequest[any, REQ](c, http.MethodOptions, path, nil); err != nil {
 			err = fmt.Errorf("schema request failed: %w", err)
 			return
 		}
-	}
 
-	var reqBody io.Reader
-	if shouldEncode {
-		var data []byte
-		data, err = mm.EncodeFromValue(*body, "")
-		if err != nil {
-			err = fmt.Errorf("encode metamessage failed: %w", err)
+		// if body != nil {
+		// 	query, err = mm.ValueToJsonc(*body, "")
+		// 	if err != nil {
+		// 		err = fmt.Errorf("encode metamessage failed: %w", err)
+		// 		return
+		// 	}
+		// }
+		// contentType = web.ContentTypeJSONC
+
+		if body != nil {
+			var data []byte
+			data, err = mm.EncodeFromValue(*body, "")
+			if err != nil {
+				err = fmt.Errorf("encode metamessage failed: %w", err)
+				return
+			}
+			query = hex.EncodeToString(data)
+		}
+		contentType = web.ContentTypeMetaMessage
+	} else if slices.Contains([]string{http.MethodPost, http.MethodPut, http.MethodPatch}, method) {
+		if _, err = DoRequest[any, REQ](c, http.MethodOptions, path, nil); err != nil {
+			err = fmt.Errorf("schema request failed: %w", err)
 			return
 		}
-		reqBody = bytes.NewReader(data)
+
+		if body != nil {
+			var data []byte
+			data, err = mm.EncodeFromValue(*body, "")
+			if err != nil {
+				err = fmt.Errorf("encode metamessage failed: %w", err)
+				return
+			}
+			reqBody = bytes.NewReader(data)
+		}
+		contentType = web.ContentTypeMetaMessage
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, reqBody)
+	url := c.baseURL + path
+	if query != "" {
+		url = fmt.Sprintf("%s?data=%s", url, query)
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		err = fmt.Errorf("create request failed: %w", err)
 		return
 	}
 
-	req.Header.Set("Accept", web.ContentTypeMetaMessage)
-	if shouldEncode {
-		req.Header.Set("Content-Type", web.ContentTypeMetaMessage)
+	if contentType != "" {
+		req.Header.Set("Accept", web.ContentTypeMetaMessage)
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	r, err := c.httpClient.Do(req)
@@ -84,6 +117,11 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 	}
 	defer r.Body.Close()
 
+	if r.StatusCode != 200 {
+		err = fmt.Errorf("do request failed: %d %s %s", r.StatusCode, r.Request.Method, r.Request.URL.String())
+		return
+	}
+
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		err = fmt.Errorf("read response failed: %w", err)
@@ -92,7 +130,7 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 
 	if err = mm.DecodeToValue(data, &resp); err != nil {
 		jsonc, _ := mm.DecodeToJsonc(data)
-		err = fmt.Errorf("decode metamessage failed: %s", jsonc)
+		err = fmt.Errorf("decode metamessage failed: %s: %s", err, jsonc)
 		return
 	}
 
@@ -105,27 +143,27 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 
 // GET sends a GET request using the default client.
 func GET[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
-	return DoRequest[REQ, RESP](defaultClient, "GET", path, body)
+	return DoRequest[REQ, RESP](defaultClient, http.MethodGet, path, body)
 }
 
 // POST sends a POST request using the default client.
 func POST[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
-	return DoRequest[REQ, RESP](defaultClient, "POST", path, body)
+	return DoRequest[REQ, RESP](defaultClient, http.MethodPost, path, body)
 }
 
 // PUT sends a PUT request using the default client.
 func PUT[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
-	return DoRequest[REQ, RESP](defaultClient, "PUT", path, body)
+	return DoRequest[REQ, RESP](defaultClient, http.MethodPut, path, body)
 }
 
 // DELETE sends a DELETE request using the default client.
 func DELETE[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
-	return DoRequest[REQ, RESP](defaultClient, "DELETE", path, body)
+	return DoRequest[REQ, RESP](defaultClient, http.MethodDelete, path, body)
 }
 
 // PATCH sends a PATCH request using the default client.
 func PATCH[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {
-	return DoRequest[REQ, RESP](defaultClient, "PATCH", path, body)
+	return DoRequest[REQ, RESP](defaultClient, http.MethodPatch, path, body)
 }
 
 // func OPTIONS[REQ any, RESP any](path string, body *REQ) (resp RESP, err error) {

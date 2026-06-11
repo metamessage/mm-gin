@@ -56,6 +56,12 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/metamessage/metamessage v0.1.18 h1:3O5+kQT1v/Kme0aSjWwP6VAzqU5miRrfd1wGYFf7+h4=
 github.com/metamessage/metamessage v0.1.18/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
+github.com/metamessage/metamessage v0.2.1 h1:gQS8yXvteON+FRucjtWaKxopWPZbSUwv0OQeTJXUhak=
+github.com/metamessage/metamessage v0.2.1/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
+github.com/metamessage/metamessage v0.2.2 h1:qVv5SSAYgXQOZUktYZ8WjUPRbrEZNirmAb2lM6TLNHU=
+github.com/metamessage/metamessage v0.2.2/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
+github.com/metamessage/metamessage v0.2.3 h1:YSzGVGsxxtJpf68YhD4WPb8cWZ7Z4qsx8+H/eswLQco=
+github.com/metamessage/metamessage v0.2.3/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=

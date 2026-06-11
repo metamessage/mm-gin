@@ -5,12 +5,14 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/metamessage/mm-web-go/client"
 	server "github.com/metamessage/mm-web-go/mmvanilla"
 )
 
+// go run ./examples/vanilla/main.go
 type User struct {
 	ID       int64  `mm:"desc=User ID"`
 	Name     string `mm:"desc=User name; min=1; max=50"`
@@ -63,23 +65,24 @@ var users = []User{
 	{ID: 3, Name: "Charlie", Email: "charlie@example.com", Age: 35, IsActive: false},
 }
 
-func listUsers(w http.ResponseWriter, r *http.Request) {
-	server.Respond(w, ListUsersResponse{
+func listUsers(r *http.Request, _ *any) (any, error) {
+	return ListUsersResponse{
 		Total: int64(len(users)),
 		Users: users,
-	}, "")
+	}, nil
 }
 
-func getUser(w http.ResponseWriter, r *http.Request) {
+func getUser(r *http.Request, u *User) (any, error) {
+	fmt.Printf("url: %v\n", r.RequestURI)
+	fmt.Printf("user: %+v\n", *u)
 	idStr := r.PathValue("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for _, u := range users {
 		if u.ID == id {
-			server.RespondWithStatus(w, http.StatusOK, APIResponse{Code: 0, Message: "success", Data: &u}, "")
-			return
+			return APIResponse{Code: 0, Message: "success", Data: &u}, nil
 		}
 	}
-	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil, fmt.Errorf("user not found")
 }
 
 func createUser(r *http.Request, req *CreateUserRequest) (any, error) {
@@ -117,29 +120,28 @@ func updateUser(r *http.Request, req *UpdateUserRequest) (any, error) {
 	return nil, fmt.Errorf("user not found")
 }
 
-func deleteUser(w http.ResponseWriter, r *http.Request) {
+func deleteUser(r *http.Request, _ *any) (any, error) {
 	idStr := r.PathValue("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	for i, u := range users {
 		if u.ID == id {
 			users = append(users[:i], users[i+1:]...)
-			server.RespondWithStatus(w, http.StatusOK, APIResponse{Code: 0, Message: "user deleted"}, "")
-			return
+			return APIResponse{Code: 0, Message: "user deleted"}, nil
 		}
 	}
-	server.RespondWithStatus(w, http.StatusNotFound, ErrorResponse{Error: "user not found"}, "")
+	return nil, fmt.Errorf("user not found")
 }
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	server.Respond(w, HealthResponse{Status: "ok"}, "")
+func healthCheck(r *http.Request, _ *any) (any, error) {
+	return HealthResponse{Status: "ok"}, nil
 }
 
 func runTestsWithPort(port string) {
 	baseURL := fmt.Sprintf("http://localhost:%s", port)
 
-	fmt.Println("\n" + "=" + repeat("=", 60))
+	fmt.Println(repeat("=", 100))
 	fmt.Println("[Test] CRUD with MetaMessage binary protocol (net/http)...")
-	fmt.Println(repeat("=", 61) + "[]")
+	fmt.Println(repeat("=", 100))
 
 	client.SetDefaultClient(baseURL, true)
 
@@ -154,8 +156,14 @@ func runTestsWithPort(port string) {
 		fmt.Printf("     - ID: %d, Name: %s, Email: %s, Age: %d\n", u.ID, u.Name, u.Email, u.Age)
 	}
 
-	fmt.Println("\n  [GET] /api/v1/users/1")
-	resp2, err := client.GET[any, APIResponse]("/api/v1/users/1", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [GET] /api/v1/user/1")
+	u := User{
+		ID:   223,
+		Name: "322",
+	}
+
+	resp2, err := client.GET[User, APIResponse]("/api/v1/user/1", &u)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -163,13 +171,14 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp2.Message)
 	fmt.Printf("     User: %+v\n", resp2.Data)
 
-	fmt.Println("\n  [POST] /api/v1/users")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [POST] /api/v1/user/create")
 	createReq := &CreateUserRequest2{
 		Name:  "David",
 		Email: "david@example.com",
 		Age:   28,
 	}
-	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/users", createReq)
+	resp3, err := client.POST[CreateUserRequest2, APIResponse]("/api/v1/user/create", createReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -177,10 +186,11 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp3.Message)
 	fmt.Printf("     New User: %+v\n", resp3.Data)
 
-	fmt.Println("\n  [PUT] /api/v1/users/1")
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [PUT] /api/v1/user/update/1")
 	name := "Alice Updated"
 	updateReq := &UpdateUserRequest{Name: &name}
-	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/users/1", updateReq)
+	resp4, err := client.PUT[UpdateUserRequest, APIResponse]("/api/v1/user/update/1", updateReq)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
@@ -188,14 +198,16 @@ func runTestsWithPort(port string) {
 	fmt.Printf("  [OK] Message: %s\n", resp4.Message)
 	fmt.Printf("     Updated User: %+v\n", resp4.Data)
 
-	fmt.Println("\n  [DELETE] /api/v1/users/3")
-	resp5, err := client.DELETE[any, APIResponse]("/api/v1/users/3", nil)
+	fmt.Println(repeat("=", 100))
+	fmt.Println("\n  [DELETE] /api/v1/user/delete/3")
+	resp5, err := client.DELETE[any, APIResponse]("/api/v1/user/delete/3", nil)
 	if err != nil {
 		fmt.Printf("  [Error] %v\n", err)
 		return
 	}
 	fmt.Printf("  [OK] Message: %s\n", resp5.Message)
 
+	fmt.Println(repeat("=", 100))
 	fmt.Println("\n  [HealthCheck] /api/v1/health")
 	resp6, err := client.GET[any, HealthResponse]("/api/v1/health", nil)
 	if err != nil {
@@ -206,11 +218,13 @@ func runTestsWithPort(port string) {
 }
 
 func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
+	var sb strings.Builder
+	sb.Grow(len(s) * n)
+
+	for range n {
+		sb.WriteString(s)
 	}
-	return result
+	return sb.String()
 }
 
 func main() {
@@ -219,10 +233,10 @@ func main() {
 	server.Init(mux, "/api/v1")
 
 	server.GET("/users", listUsers)
-	server.GET("/users/{id}", getUser)
-	server.POST("/users", createUser)
-	server.PUT("/users/{id}", updateUser)
-	server.DELETE("/users/{id}", deleteUser)
+	server.GET("/user/{id}", getUser)
+	server.POST("/user/create", createUser)
+	server.PUT("/user/update/{id}", updateUser)
+	server.DELETE("/user/delete/{id}", deleteUser)
 	server.GET("/health", healthCheck)
 
 	go func() {
@@ -237,9 +251,9 @@ func main() {
 
 	runTestsWithPort("8080")
 
-	fmt.Println("\n" + repeat("=", 61))
+	fmt.Println("\n" + repeat("=", 100))
 	fmt.Println("[Done] All tests completed!")
-	fmt.Println(repeat("=", 61))
+	fmt.Println(repeat("=", 100))
 
 	fmt.Println("\nPress Ctrl+C to exit...")
 	select {}

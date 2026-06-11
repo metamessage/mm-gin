@@ -2,9 +2,11 @@ package mmvanilla
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/metamessage/mm-web-go/web"
 
@@ -112,22 +114,10 @@ func Init(mux *http.ServeMux, prefix string) {
 	defaultPrefix = prefix
 }
 
-func GET(relativePath string, handlers ...http.HandlerFunc) {
-	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(chain(handlers))
-	defaultMux.HandleFunc("GET "+fullPath, h)
-}
-
 func HEAD(relativePath string, handlers ...http.HandlerFunc) {
 	fullPath := defaultPrefix + relativePath
 	h := wrapHandler(chain(handlers))
 	defaultMux.HandleFunc("HEAD "+fullPath, h)
-}
-
-func DELETE(relativePath string, handlers ...http.HandlerFunc) {
-	fullPath := defaultPrefix + relativePath
-	h := wrapHandler(chain(handlers))
-	defaultMux.HandleFunc("DELETE "+fullPath, h)
 }
 
 func OPTIONS(relativePath string, handlers ...http.HandlerFunc) {
@@ -144,6 +134,8 @@ func Any(relativePath string, handlers ...http.HandlerFunc) {
 
 type Handler[T any] func(r *http.Request, req *T) (data any, err error)
 
+type HandlerWithoutReq func(r *http.Request) (data any, err error)
+
 func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 	if defaultMux == nil {
 		return
@@ -152,11 +144,22 @@ func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 	defaultMux.HandleFunc(fmt.Sprintf("%s %s", method, fullPath), func(w http.ResponseWriter, r *http.Request) {
 		mw := &mmResponseWriter{ResponseWriter: w}
 		var req T
-		if err := bind(r, &req); err != nil {
-			mw.abortWithMetaMessage(http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
-			encodeResponse(w, mw)
-			return
+		if slices.Contains([]string{http.MethodPost, http.MethodPut, http.MethodPatch}, r.Method) {
+			if err := bind(r, &req); err != nil {
+				mw.abortWithMetaMessage(http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+				encodeResponse(w, mw)
+				return
+			}
 		}
+
+		if slices.Contains([]string{http.MethodGet, http.MethodDelete}, r.Method) {
+			if err := bindQuery(r, &req); err != nil {
+				mw.abortWithMetaMessage(http.StatusBadRequest, mmError{Error: "bind failed: " + err.Error()})
+				encodeResponse(w, mw)
+				return
+			}
+		}
+
 		data, err := handler(r, &req)
 		if err != nil {
 			mw.abortWithMetaMessage(http.StatusUnprocessableEntity, mmError{Error: err.Error()})
@@ -178,6 +181,14 @@ func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(encoded)
 	})
+}
+
+func GET[T any](relativePath string, handler Handler[T]) {
+	registerHandler(http.MethodGet, relativePath, handler)
+}
+
+func DELETE[T any](relativePath string, handler Handler[T]) {
+	registerHandler(http.MethodDelete, relativePath, handler)
 }
 
 func POST[T any](relativePath string, handler Handler[T]) {
@@ -207,6 +218,29 @@ func bind(r *http.Request, obj any) error {
 		return mm.JsoncToValue(string(body), obj)
 	default:
 		return fmt.Errorf("unsupported Content-Type: %s", ct)
+	}
+}
+
+// func bindQuery(r *http.Request, obj any) error {
+// 	query := r.URL.RawQuery
+// 	if query == "" {
+// 		query = "null"
+// 	}
+
+// 	return mm.JsoncToValue(query, obj)
+// }
+
+func bindQuery(r *http.Request, obj any) error {
+	dataHex := r.URL.Query().Get("data")
+	if dataHex == "" {
+		return nil
+	} else {
+		binData, err := hex.DecodeString(dataHex)
+		if err != nil {
+			return fmt.Errorf("invalid hex string")
+		}
+
+		return mm.DecodeToValue(binData, obj)
 	}
 }
 
