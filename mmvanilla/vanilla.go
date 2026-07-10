@@ -2,6 +2,7 @@ package mmvanilla
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -18,6 +19,19 @@ var defaultPrefix string
 
 type mmError struct {
 	Error string `mm:"desc=Error info"`
+}
+
+// writeSchemaResponse writes a MetaMessage-encoded schema with the
+// Access-Control-Max-Age and Schema-Md5 headers used for schema discovery.
+// Schema-Md5 is the md5 hex digest of the encoded content, allowing clients
+// to detect schema changes (mirrors mm-web-py's MMRouter behavior).
+func writeSchemaResponse(w http.ResponseWriter, encoded []byte, allow string) {
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Schema-Md5", fmt.Sprintf("%x", md5.Sum(encoded)))
+	w.Header().Set("Allow", allow)
+	w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
+	w.WriteHeader(http.StatusOK)
+	w.Write(encoded)
 }
 
 type mmResponseWriter struct {
@@ -174,10 +188,7 @@ func registerHandler[T any](method, relativePath string, handler Handler[T]) {
 			AbortWithMetaMessage(w, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 			return
 		}
-		w.Header().Set("Allow", fmt.Sprintf("%s, %s", method, http.MethodOptions))
-		w.Header().Set("Content-Type", web.ContentTypeMetaMessage)
-		w.WriteHeader(http.StatusOK)
-		w.Write(encoded)
+		writeSchemaResponse(w, encoded, fmt.Sprintf("%s, %s", method, http.MethodOptions))
 	})
 }
 

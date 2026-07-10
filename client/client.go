@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/metamessage/mm-web-go/web"
@@ -21,6 +22,13 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	debug      bool
+
+	// schemaMD5 caches the Schema-Md5 header returned by OPTIONS
+	// preflight responses, keyed by request path. The cached value
+	// is sent on subsequent requests so the server can detect schema
+	// changes (mirrors mm-web-py's MMClient behavior).
+	schemaMD5 map[string]string
+	mu        sync.Mutex
 }
 
 // NewClient creates a new Client with the given base URL.
@@ -30,8 +38,23 @@ func NewClient(baseURL string, debug bool) *Client {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		debug: debug,
+		debug:     debug,
+		schemaMD5: make(map[string]string),
 	}
+}
+
+// getSchemaMD5 returns the cached Schema-Md5 for the given path.
+func (c *Client) getSchemaMD5(path string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.schemaMD5[path]
+}
+
+// setSchemaMD5 caches the Schema-Md5 for the given path.
+func (c *Client) setSchemaMD5(path, md5 string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.schemaMD5[path] = md5
 }
 
 // SetDefaultClient sets the global default client with the given base URL.
@@ -110,6 +133,13 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 		req.Header.Set("Content-Type", contentType)
 	}
 
+	// Add cached Schema-Md5 for schema validation (mirrors mm-web-py).
+	if method != http.MethodOptions {
+		if md5 := c.getSchemaMD5(path); md5 != "" {
+			req.Header.Set("Schema-Md5", md5)
+		}
+	}
+
 	r, err := c.httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("do request failed: %w", err)
@@ -132,6 +162,11 @@ func DoRequest[REQ any, RESP any](c *Client, method, path string, body *REQ) (re
 		jsonc, _ := mm.DecodeToJsonc(data)
 		err = fmt.Errorf("decode metamessage failed: %s: %s", err, jsonc)
 		return
+	}
+
+	// Cache Schema-Md5 from OPTIONS preflight responses for later requests.
+	if method == http.MethodOptions {
+		c.setSchemaMD5(path, r.Header.Get("Schema-Md5"))
 	}
 
 	if c.debug {

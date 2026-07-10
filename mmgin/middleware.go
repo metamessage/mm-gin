@@ -2,6 +2,7 @@ package mmgin
 
 import (
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"net/http"
@@ -267,8 +268,21 @@ func OptionsHandler(obj any) gin.HandlerFunc {
 			})
 			return
 		}
+		c.Header("Access-Control-Max-Age", "86400")
+		c.Header("Schema-Md5", fmt.Sprintf("%x", md5.Sum(encoded)))
 		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 	}
+}
+
+// writeSchemaResponse writes a MetaMessage-encoded schema with the
+// Access-Control-Max-Age and Schema-Md5 headers used for schema discovery.
+// Schema-Md5 is the md5 hex digest of the encoded content, allowing clients
+// to detect schema changes (mirrors mm-web-py's MMRouter behavior).
+func writeSchemaResponse(c *gin.Context, encoded []byte, allow string) {
+	c.Header("Access-Control-Max-Age", "86400")
+	c.Header("Schema-Md5", fmt.Sprintf("%x", md5.Sum(encoded)))
+	c.Header("Allow", allow)
+	c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
 }
 
 // RouteGroup wraps gin.RouterGroup for extended routing capabilities.
@@ -329,8 +343,7 @@ func GET[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		c.Header("Allow", "GET, OPTIONS")
-		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		writeSchemaResponse(c, encoded, "GET, OPTIONS")
 	})
 }
 
@@ -371,8 +384,7 @@ func DELETE[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		c.Header("Allow", "DELETE, OPTIONS")
-		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		writeSchemaResponse(c, encoded, "DELETE, OPTIONS")
 	})
 }
 
@@ -423,8 +435,7 @@ func POST[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		c.Header("Allow", "POST, OPTIONS")
-		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		writeSchemaResponse(c, encoded, "POST, OPTIONS")
 	})
 }
 
@@ -459,8 +470,7 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		c.Header("Allow", "PUT, OPTIONS")
-		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		writeSchemaResponse(c, encoded, "PUT, OPTIONS")
 	})
 }
 
@@ -495,8 +505,7 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 			})
 			return
 		}
-		c.Header("Allow", "PATCH, OPTIONS")
-		c.Data(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		writeSchemaResponse(c, encoded, "PATCH, OPTIONS")
 	})
 }
 

@@ -2,6 +2,7 @@ package mmecho
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -12,6 +13,17 @@ import (
 	echo "github.com/labstack/echo/v4"
 	mm "github.com/metamessage/metamessage"
 )
+
+// writeSchemaResponse writes a MetaMessage-encoded schema with the
+// Access-Control-Max-Age and Schema-Md5 headers used for schema discovery.
+// Schema-Md5 is the md5 hex digest of the encoded content, allowing clients
+// to detect schema changes (mirrors mm-web-py's MMRouter behavior).
+func writeSchemaResponse(c echo.Context, encoded []byte, allow string) error {
+	c.Response().Header().Set("Access-Control-Max-Age", "86400")
+	c.Response().Header().Set("Schema-Md5", fmt.Sprintf("%x", md5.Sum(encoded)))
+	c.Response().Header().Set("Allow", allow)
+	return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+}
 
 var defaultGroup *echo.Group
 
@@ -96,8 +108,7 @@ func GET[T any](relativePath string, handler Handler[T]) {
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
-		c.Response().Header().Set("Allow", "GET, OPTIONS")
-		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		return writeSchemaResponse(c, encoded, "GET, OPTIONS")
 	})
 }
 
@@ -128,8 +139,7 @@ func DELETE[T any](relativePath string, handler Handler[T]) {
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
-		c.Response().Header().Set("Allow", "DELETE, OPTIONS")
-		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		return writeSchemaResponse(c, encoded, "DELETE, OPTIONS")
 	})
 }
 
@@ -170,8 +180,7 @@ func POST[T any](relativePath string, handler Handler[T]) {
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
-		c.Response().Header().Set("Allow", "POST, OPTIONS")
-		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		return writeSchemaResponse(c, encoded, "POST, OPTIONS")
 	})
 }
 
@@ -194,8 +203,7 @@ func PUT[T any](relativePath string, handler Handler[T]) {
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
-		c.Response().Header().Set("Allow", "PUT, OPTIONS")
-		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		return writeSchemaResponse(c, encoded, "PUT, OPTIONS")
 	})
 }
 
@@ -218,8 +226,7 @@ func PATCH[T any](relativePath string, handler Handler[T]) {
 		if err != nil {
 			return AbortWithMetaMessage(c, http.StatusInternalServerError, mmError{Error: "schema encode failed"})
 		}
-		c.Response().Header().Set("Allow", "PATCH, OPTIONS")
-		return c.Blob(http.StatusOK, web.ContentTypeMetaMessage, encoded)
+		return writeSchemaResponse(c, encoded, "PATCH, OPTIONS")
 	})
 }
 
